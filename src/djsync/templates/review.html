@@ -9,13 +9,6 @@
   <a class="toplink {% if view == 'archive' %}on{% endif %}" href="{{ url_for('index', view='archive') if view != 'archive' else url_for('index') }}">
     {% if view == 'archive' %}← Board{% else %}Archive{% if skipped or in_rekordbox %} <b class="badge">{{ skipped|length + in_rekordbox|length }}</b>{% endif %}{% endif %}
   </a>
-  <form method="post" action="{{ url_for('scan') }}" class="inline">
-    <span class="muted small hide-sm">{% if last_scan %}Scanned {{ last_scan|ago }}{% else %}Not scanned yet{% endif %}</span>
-    <button class="btn" type="submit">
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.6 2.4v3.8H9.8M2.4 13.6V9.8h3.8M3.1 6.1a5.2 5.2 0 0 1 9.3-1.4l1.2 1.5M12.9 9.9a5.2 5.2 0 0 1-9.3 1.4l-1.2-1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Scan Spotify
-    </button>
-  </form>
 </div>
 {% endblock %}
 
@@ -25,11 +18,17 @@
 
   {# ============================================================ 1. Scan #}
   <section class="col" aria-labelledby="c-scan">
-    <header class="col-head">
+    <header class="col-head has-btn">
       <span class="num">1</span>
       <h2 id="c-scan">Scan</h2>
       <b class="badge {% if pending %}hot{% endif %}">{{ pending|length }}</b>
-      <span class="col-sub">New likes, not in rekordbox</span>
+      <form method="post" action="{{ url_for('scan') }}" class="head-btn">
+        <button class="btn primary sm" type="submit" title="Check Spotify for new liked songs">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M13.6 2.4v3.8H9.8M2.4 13.6V9.8h3.8M3.1 6.1a5.2 5.2 0 0 1 9.3-1.4l1.2 1.5M12.9 9.9a5.2 5.2 0 0 1-9.3 1.4l-1.2-1.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Scan Spotify
+        </button>
+      </form>
+      <span class="col-sub">New likes, not in rekordbox · {% if last_scan %}scanned {{ last_scan|ago }}{% else %}not scanned yet{% endif %}</span>
     </header>
     {% if pending %}
     <form method="post" action="{{ url_for('approve') }}" id="approve" class="col-form">
@@ -70,7 +69,7 @@
     <div class="col-body"><div class="col-empty">
       <div class="empty-art" aria-hidden="true">♪</div>
       <p>All caught up.</p>
-      <p class="muted small">Like songs on Spotify, then <b>Scan Spotify</b>.</p>
+      <p class="muted small">Like songs on Spotify, then click <b>Scan Spotify</b> above.</p>
     </div></div>
     {% endif %}
   </section>

@@ -464,3 +464,8 @@ details.menu summary.btn::after { content: " ▾"; }
   }
   .col { flex: 0 0 86vw; scroll-snap-align: center; max-height: none; }
 }
+
+/* Scan column header carries the Scan Spotify button */
+.col-head.has-btn { grid-template-columns: auto 1fr auto auto; }
+.col-head.has-btn .col-sub { grid-column: 2 / 5; }
+.head-btn { grid-column: 4; grid-row: 1; margin: 0; }
