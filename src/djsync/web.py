@@ -226,18 +226,6 @@ def create_app(cfg: Config) -> Flask:
             start_research(approved_now)
         return back(approved_now)
 
-    @app.post("/open")
-    def open_searches():
-        """Open one store's search, as browser tabs, for every approved track without a file yet."""
-        st = state()
-        store = request.form.get("store")
-        if store not in stores.STORES:
-            return "unknown store", 400
-        _, waiting = core.match_files(cfg, st)
-        urls = [stores.url(store, t.artist, t.title) for t in waiting]
-        stores.open_tabs(urls)
-        return back()
-
     @app.post("/research")
     def research_route():
         """Find the best store link: one track (id=...) or every approved track without one."""

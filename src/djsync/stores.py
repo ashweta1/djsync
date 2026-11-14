@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import webbrowser
 from urllib.parse import quote, quote_plus
 
 from .matching import _BRACKETED_NOISE, _DASH_NOISE, _FEAT
@@ -16,9 +15,6 @@ STORES: dict[str, tuple[str, str]] = {
     "itunes": ("Apple Music / iTunes", "https://music.apple.com/search?term={q}"),
     "amazon": ("Amazon Music", "https://www.amazon.com/s?k={q}&i=digital-music"),
 }
-
-
-MAX_TABS = 30  # don't flood the browser in one click
 
 
 def search_query(artist: str, title: str) -> str:
@@ -46,11 +42,3 @@ def links(artist: str, title: str, enabled: list[str]) -> list[dict]:
         {"key": k, "name": STORES[k][0], "url": url(k, artist, title)}
         for k in enabled if k in STORES
     ]
-
-
-def open_tabs(urls: list[str]) -> int:
-    """Open URLs as tabs in the default browser. Returns how many were opened."""
-    urls = urls[:MAX_TABS]
-    for u in urls:
-        webbrowser.open_new_tab(u)
-    return len(urls)

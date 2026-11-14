@@ -123,12 +123,6 @@
         <button class="btn sm" type="submit" title="Find the best place to buy each track not checked yet">✦ Find best sources ({{ todo|length }})</button>
       </form>
       {% endif %}
-      <details class="menu">
-        <summary class="btn ghost sm">Search all</summary>
-        <form method="post" action="{{ url_for('open_searches') }}" class="menu-pop">
-          {% for s in stores %}<button type="submit" name="store" value="{{ s.key }}" class="menu-item">Open all on {{ s.name }}</button>{% endfor %}
-        </form>
-      </details>
       <form method="post" action="{{ url_for('rescan_downloads') }}" class="inline push">
         <button class="btn ghost sm" title="Rescan Downloads for new files">↻ Downloads</button>
       </form>

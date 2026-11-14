@@ -51,9 +51,7 @@ djsync now also asks to read your playlists.
    Untick the ones you don't want and click **Approve**. Tracks you untick
    aren't suggested again, but you can restore them from the Skipped list.
 3. **Buy**: each approved track has one-click search links for Beatport,
-   Bandcamp and Deezer. **Open all on Beatport** opens a Beatport search tab
-   for every approved track that doesn't have a file yet (up to 30 at a time),
-   and there's a button for each of the other stores too. Search terms
+   Bandcamp and Deezer. Search terms
    leave out "(Original Mix)" and "feat." but keep remix names. Buy the track
    and let it download. Deezer doesn't sell downloads; its link is there so you
    can listen and check you have the right version.
