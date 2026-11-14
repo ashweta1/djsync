@@ -968,7 +968,7 @@ def test_low_confidence_match_is_check_not_buy(cfg):
         store="beatport.com", store_name="Beatport", url=BP, label="Dance - Peggy Gou", confidence="low"))
     st.save()
     html = create_app(cfg).test_client().get("/?tab=buy").get_data(as_text=True)
-    assert 'class="store-link unsure"' in html and "Buy on Beatport" not in html
+    assert 'class="store-link store-beatport-com unsure"' in html and "Buy on Beatport" not in html
     assert "Search Beatport" in html
 
 
@@ -1160,3 +1160,110 @@ def test_buy_card_has_no_duplicate_links(cfg):
     assert card.count("beatport.com/search") == 1                # ...but still once in the ⋯ menu
     assert card.count("Listen on Deezer") == 1 and card.count("Bandcamp") == 1
     assert "btn primary" not in card                             # no loud buttons on cards
+
+
+# --- scanning playlists as well as Liked Songs ------------------------------------------
+
+def _sp_track(tid, artist, title):
+    return {"id": tid, "name": title, "artists": [{"name": artist}], "album": {"name": "LP", "images": []},
+            "external_ids": {}, "external_urls": {}, "type": "track"}
+
+
+class FakeSpotifyPlaylists:
+    def __init__(self, liked, playlists, broken=()):
+        self.liked, self.pls, self.broken = liked, playlists, set(broken)
+
+    def current_user_saved_tracks(self, limit, offset):
+        items = [{"added_at": "2026-11-10T00:00:00Z", "track": _sp_track(*t)} for t in self.liked[offset:offset + limit]]
+        return {"items": items, "next": None}
+
+    def current_user_playlists(self, limit, offset):
+        items = [{"id": pid, "name": name, "tracks": {"total": len(tr)}, "owner": {"display_name": "me"}}
+                 for pid, (name, tr) in self.pls.items()]
+        return {"items": items, "next": None}
+
+    def playlist_items(self, pid, limit, offset, additional_types):
+        if pid in self.broken:
+            raise RuntimeError("404 Not Found")
+        name, tr = self.pls[pid]
+        items = [{"added_at": "2026-11-12T00:00:00Z", "track": _sp_track(*t)} for t in tr]
+        items.append({"added_at": "x", "track": {"id": "ep1", "type": "episode", "name": "Podcast"}})
+        return {"items": items, "next": None}
+
+
+def _fake_sp():
+    return FakeSpotifyPlaylists(
+        liked=[("1", "Bicep", "Glue")],
+        playlists={"pA": ("Warm-up", [("2", "Overmono", "So U Kno"), ("1", "Bicep", "Glue")]),
+                   "pB": ("Peak time", [("3", "Kettama", "It Gets Better")]),
+                   "pC": ("Discover Weekly", [("4", "X", "Y")])},
+        broken={"pC"})
+
+
+def test_scan_defaults_to_liked_songs_only(cfg):
+    st = State.load(cfg.state_path)
+    r = core.scan(cfg, st, sp=_fake_sp(), library=[])
+    assert set(st.tracks) == {"1"} and r.sources == 1
+    assert [p["name"] for p in st.playlists] == ["Warm-up", "Peak time", "Discover Weekly"]
+    assert st.sources == ["liked"]
+
+
+def test_scan_selected_playlists_dedupes_and_remembers(cfg):
+    st = State.load(cfg.state_path)
+    r = core.scan(cfg, st, sp=_fake_sp(), library=[], sources=["liked", "pA", "pC"])
+    assert set(st.tracks) == {"1", "2"}                   # Glue only once; episode skipped
+    assert st.tracks["2"].source == "Warm-up" and st.tracks["1"].source == "Liked Songs"
+    assert r.liked_checked == 2 and r.new_missing == 2
+    assert any("Discover Weekly" in e for e in r.errors)  # unreadable playlist reported, scan goes on
+    st2 = State.load(cfg.state_path)
+    assert st2.sources == ["liked", "pA", "pC"]            # remembered for next time
+    core.scan(cfg, st2, sp=_fake_sp(), library=[])        # next scan uses that choice
+    assert st2.sources == ["liked", "pA", "pC"]
+
+
+def test_scan_skips_deleted_playlists(cfg):
+    st = State.load(cfg.state_path)
+    st.sources = ["pGone", "pB"]
+    r = core.scan(cfg, st, sp=_fake_sp(), library=[])
+    assert set(st.tracks) == {"3"} and r.sources == 1 and not r.errors
+
+
+def test_picker_on_the_board(cfg, monkeypatch):
+    from djsync.web import create_app
+    monkeypatch.setattr(core.spotify, "client", lambda c: _fake_sp())
+    monkeypatch.setattr(core.rekordbox, "read_library", lambda c: [])
+    client = create_app(cfg).test_client()
+
+    # before any scan: Liked Songs ticked, offer to load playlists
+    html = client.get("/").get_data(as_text=True)
+    assert 'value="liked" checked' in html and "Load my playlists" in html
+
+    client.post("/playlists/refresh", data={"picker": "1", "source": ["liked"]})
+    html = client.get("/?pick=1").get_data(as_text=True)
+    assert "Warm-up" in html and "Peak time" in html and 'value="pA" ' in html
+
+    # tick a playlist and scan
+    client.post("/scan", data={"picker": "1", "source": ["liked", "pB"]})
+    html = client.get("/").get_data(as_text=True)
+    assert "Liked Songs + 1 more" in html
+    assert 'value="pB" checked' in html and "♫ Peak time" in html
+
+    # nothing ticked: refused, nothing changes
+    r = client.post("/scan", data={"picker": "1"})
+    assert "pick=1" in r.headers["Location"]
+    assert State.load(cfg.state_path).sources == ["liked", "pB"]
+
+
+
+def test_research_again_is_visible_on_the_card_once(cfg):
+    from djsync.web import create_app
+    st = State(path=cfg.state_path)
+    st.tracks["1"] = Track(id="1", artist="Bicep", title="Glue", status=APPROVED)
+    research.apply(st.tracks["1"], research.Finding(
+        store="deezer", store_name="Deezer", url="https://www.deezer.com/track/1", label="Glue - Bicep"))
+    st.save()
+    html = create_app(cfg).test_client().get("/").get_data(as_text=True)
+    card = html.split('class="card buy')[1].split("</article>")[0]
+    foot = card.split('class="card-foot"')[1].split('class="more-list"')[0]
+    assert "Research again" in foot and card.count("Research again") == 1
+    assert 'class="store-link store-deezer"' in card

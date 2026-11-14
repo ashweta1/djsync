@@ -21,11 +21,24 @@ moves from left to right:
 
 | 1. Scan | 2. Buy | 3. Import | 4. Playlists |
 |---|---|---|---|
-| New Spotify likes that aren't in rekordbox. **✓** approves a card and **✕** skips it. You can also tick several, then **Approve selected** or **Skip unselected**. | Approved tracks, each with the best place to buy it. | Tracks whose file has turned up in Downloads or Music. **Import** adds them to rekordbox. | Each day's `djsync-downloads-<date>` playlist and its tracks. |
+| New tracks from Spotify that aren't in rekordbox. **✓** approves a card and **✕** skips it. You can also tick several, then **Approve selected** or **Skip unselected**. | Approved tracks, each with the best place to buy it. | Tracks whose file has turned up in Downloads or Music. **Import** adds them to rekordbox. | Each day's `djsync-downloads-<date>` playlist and its tracks. |
 
 A card that just moved is highlighted in its new column. Skipped tracks, and
 ones that reached rekordbox some other way, are under **Archive** in the
 header. On a phone, swipe between the columns.
+
+### Choosing what to scan
+
+**Scan Spotify** reads your **Liked Songs** by default. Click the **▾** next
+to it to choose more: it lists all your playlists (made or followed) with their
+track counts and a filter box. Tick any combination and click **Scan selected**.
+djsync remembers the choice for the next **Scan Spotify**. Each Scan card says
+which playlist it came from, and a track in several playlists appears once.
+Spotify doesn't let apps read some of its own generated playlists, such as
+Discover Weekly. If one can't be read, djsync says so and scans the rest.
+
+After updating to this version, Spotify asks you to log in once more, because
+djsync now also asks to read your playlists.
 
 ## What it does
 

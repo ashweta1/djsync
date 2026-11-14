@@ -16,20 +16,57 @@ from .state import APPROVED, IMPORTED, IN_REKORDBOX, PENDING, State, Track
 
 @dataclass
 class ScanResult:
-    liked_checked: int = 0
+    liked_checked: int = 0      # tracks checked across all sources
     new_missing: int = 0
     already_owned: int = 0
     now_in_rekordbox: int = 0
+    sources: int = 0
+    errors: list[str] = field(default_factory=list)
 
 
-def scan(cfg: Config, st: State, sp=None, library: list | None = None) -> ScanResult:
-    """Fetch Liked Songs and queue the ones not already in rekordbox."""
+def scan(cfg: Config, st: State, sp=None, library: list | None = None,
+         sources: list[str] | None = None) -> ScanResult:
+    """Read the chosen Spotify sources and queue tracks not already in rekordbox.
+
+    ``sources`` is "liked" and/or playlist ids; it's remembered for next time.
+    Defaults to the last choice (Liked Songs at first).
+    """
     sp = sp or spotify.client(cfg)
     library = library if library is not None else rekordbox.read_library(cfg)
     index = Index([TrackKey.of(t.artist, t.title) for t in library], cfg.threshold)
-
     res = ScanResult()
-    for t in spotify.liked_songs(sp):
+
+    if sources is not None:
+        st.sources = [s for s in dict.fromkeys(sources) if s] or [spotify.LIKED]
+    # Refresh the playlist list, so the picker shows new playlists.
+    listed = True
+    try:
+        st.playlists = spotify.playlists(sp)
+    except Exception as e:
+        listed = False
+        res.errors.append(f"Couldn't list your playlists: {e}")
+    names = {p["id"]: p["name"] for p in st.playlists}
+
+    def tracks():
+        for src in st.sources:
+            if src == spotify.LIKED:
+                res.sources += 1
+                yield from spotify.liked_songs(sp)
+                continue
+            if listed and src not in names:
+                continue  # playlist deleted or unfollowed
+            res.sources += 1
+            try:
+                yield from spotify.playlist_tracks(sp, src, names.get(src, "playlist"))
+            except Exception as e:
+                # e.g. Spotify's own generated playlists, which apps can't read
+                res.errors.append(f"Couldn't read playlist '{names.get(src, src)}': {e}")
+
+    seen: set[str] = set()
+    for t in tracks():
+        if t.id in seen:
+            continue  # same track in several playlists
+        seen.add(t.id)
         res.liked_checked += 1
         if t.id in st.tracks:
             continue

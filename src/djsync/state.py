@@ -25,6 +25,7 @@ class Track:
     duration_ms: int = 0
     image: str = ""
     spotify_url: str = ""
+    source: str = ""           # where it was found: "Liked Songs" or a playlist name
     status: str = PENDING
     file: str = ""
     playlist: str = ""
@@ -47,6 +48,10 @@ class Track:
 class State:
     tracks: dict[str, Track] = field(default_factory=dict)
     last_scan: str = ""
+    # What "Scan Spotify" reads: "liked" and/or playlist ids. Liked Songs by default.
+    sources: list[str] = field(default_factory=lambda: ["liked"])
+    # Your playlists as of the last scan: [{id, name, count, owner}]
+    playlists: list[dict] = field(default_factory=list)
     path: Path | None = None
 
     @classmethod
@@ -55,6 +60,8 @@ class State:
         if path.exists():
             raw = json.loads(path.read_text())
             st.last_scan = raw.get("last_scan", "")
+            st.sources = raw.get("sources") or ["liked"]
+            st.playlists = raw.get("playlists", [])
             known = set(Track.__dataclass_fields__)
             st.tracks = {
                 k: Track(**{f: x for f, x in v.items() if f in known})
@@ -68,6 +75,8 @@ class State:
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(
             {"last_scan": self.last_scan,
+             "sources": self.sources,
+             "playlists": self.playlists,
              "tracks": {k: asdict(v) for k, v in self.tracks.items()}},
             indent=2,
         ))

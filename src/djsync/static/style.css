@@ -563,3 +563,52 @@ details.menu summary.btn::after { content: " ▾"; }
 /* import cards */
 .file-line { display: flex; flex-direction: column; gap: 2px; }
 .file-state { font-size: 11px; font-weight: 600; color: var(--accent-2); text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ---------- Spotify source picker (under the Scan header) ---------- */
+.split { display: inline-flex; }
+.split .btn:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.split .src-toggle { border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; padding: 5px 8px; }
+.src-toggle[aria-expanded="true"] { background: var(--panel-2); }
+.src-label { color: var(--text); }
+.src-panel { border-bottom: 1px solid var(--line); background: var(--panel); padding: 10px 12px; }
+.src-panel[hidden] { display: none; }
+.src-panel form { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.src-tools { display: flex; gap: 10px; align-items: center; }
+.src-tools .search { flex: 1; }
+.src-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; margin: 0 -4px; }
+.src { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+.src:hover { background: var(--panel-2); }
+.src[hidden] { display: none; }
+.src input { accent-color: var(--primary); width: 15px; height: 15px; flex: none; margin: 0; }
+.src-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.src.liked .src-name { font-weight: 600; }
+.src-count { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); }
+.src-empty { padding: 6px 8px; }
+.src-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* ---------- store colours, so each store is recognisable at a glance ---------- */
+.store-link { --sc: var(--accent-2); color: var(--sc); border-color: color-mix(in srgb, var(--sc) 50%, transparent);
+              background: color-mix(in srgb, var(--sc) 13%, transparent); }
+.store-link:hover { background: color-mix(in srgb, var(--sc) 24%, transparent); }
+.store-beatport-com  { --sc: #01ff95; }   /* Beatport green */
+.store-deezer        { --sc: #b46cff; }   /* Deezer purple */
+.store-bandcamp-com  { --sc: #4ab9d6; }   /* Bandcamp blue */
+.store-soundcloud-com, .store-hypeddit-com { --sc: #ff7a33; }  /* SoundCloud orange */
+.store-music-apple-com, .store-itunes-apple-com { --sc: #ff5a6e; }
+.store-amazon-com, .store-amazon-co-uk, .store-amazon-de { --sc: #ffa733; }
+.store-beatsource-com { --sc: #3fd0ff; }
+.text-link.bp { color: #01ff95; }
+@media (prefers-color-scheme: light) {
+  /* same hues, darker so the text stays readable on white */
+  .store-beatport-com  { --sc: #00995a; }
+  .store-deezer        { --sc: #8a2be2; }
+  .store-bandcamp-com  { --sc: #1a7f9a; }
+  .store-soundcloud-com, .store-hypeddit-com { --sc: #d4550f; }
+  .store-music-apple-com, .store-itunes-apple-com { --sc: #d62a40; }
+  .store-amazon-com, .store-amazon-co-uk, .store-amazon-de { --sc: #b86e00; }
+  .store-beatsource-com { --sc: #0a86b3; }
+  .text-link.bp { color: #00995a; }
+}
+/* an unsure pick keeps its store colour but gets the dashed "check first" outline */
+.store-link.unsure { color: var(--sc); background: color-mix(in srgb, var(--sc) 8%, transparent);
+                     border-style: dashed; border-color: var(--warn); }

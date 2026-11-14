@@ -143,8 +143,16 @@ def create_app(cfg: Config) -> Flask:
         ready = [t for t in approved if t.id in found]
         to_buy = [t for t in approved if t.id not in found]
         skipped, in_rb = st.by_status(SKIPPED), st.by_status(IN_REKORDBOX)
+        names = {p["id"]: p["name"] for p in st.playlists}
+        chosen = [("Liked Songs" if s == "liked" else names.get(s)) for s in st.sources]
+        chosen = [c for c in chosen if c]
+        sources_label = (chosen[0] if len(chosen) == 1 else
+                         f"{chosen[0]} + {len(chosen) - 1} more" if chosen else "Liked Songs")
         return render_template(
             "review.html",
+            sources=st.sources,
+            sources_label=sources_label,
+            spotify_playlists=st.playlists,
             view="archive" if request.args.get("view") == "archive" else "board",
             hl=set(filter(None, request.args.get("hl", "").split(","))),
             pending=pending,
@@ -169,9 +177,18 @@ def create_app(cfg: Config) -> Flask:
         with lock:
             st = state()
             try:
-                r = core.scan(cfg, st)
-                msg = (f"Checked {r.liked_checked} liked songs: {r.new_missing} new to review, "
-                       f"{r.already_owned} already in rekordbox.")
+                sources = None
+                if request.form.get("picker"):
+                    sources = request.form.getlist("source")
+                    if not sources:
+                        flash("Tick at least one: Liked Songs or a playlist.", "err")
+                        return redirect(url_for("index", pick=1))
+                r = core.scan(cfg, st, sources=sources)
+                what = "source" if r.sources == 1 else "sources"
+                msg = (f"Checked {r.liked_checked} tracks from {r.sources} {what}: {r.new_missing} "
+                       f"new to review, {r.already_owned} already in rekordbox.")
+                for err in r.errors:
+                    flash(err, "err")
                 if r.now_in_rekordbox:
                     msg += (f" {r.now_in_rekordbox} track(s) you were waiting on are now in "
                             "rekordbox; see 'Already in rekordbox'.")
@@ -179,6 +196,23 @@ def create_app(cfg: Config) -> Flask:
             except Exception as e:
                 flash(f"Scan failed: {e}", "err")
         return back()
+
+    @app.post("/playlists/refresh")
+    def refresh_playlists():
+        """Fetch your playlist list from Spotify (no scan), then reopen the picker."""
+        from . import spotify
+
+        with lock:
+            st = state()
+            if request.form.get("picker"):
+                st.sources = request.form.getlist("source") or st.sources  # keep ticks
+            try:
+                st.playlists = spotify.playlists(spotify.client(cfg))
+                st.save()
+                flash(f"Found {len(st.playlists)} playlists.", "ok")
+            except Exception as e:
+                flash(f"Couldn't load your playlists: {e}", "err")
+        return redirect(url_for("index", pick=1))
 
     @app.post("/approve")
     def approve():
