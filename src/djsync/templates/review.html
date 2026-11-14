@@ -117,18 +117,32 @@
           <span class="buylabel">{{ t.buy_label }}</span>
           {% if t.buy_confidence and t.buy_store != "deezer" %}<span class="conf {{ t.buy_confidence }}">{{ t.buy_confidence }} match</span>{% endif %}
         </div>
+        {% if t.research_error %}
+        <p class="note warn">⚠ {{ t.research_error }}</p>
+        {% else %}
         <p class="note">{% if t.buy_store == "deezer" %}Not found in any download store.{% if t.buy_note %} {{ t.buy_note }}{% endif %}{% else %}{{ t.buy_note }}{% endif %}</p>
+        {% endif %}
       {% elif t.researched_at %}
-        <p class="note warn">{% if t.research_error %}{{ t.research_error }}{% else %}Not found in any store or on Deezer.{% if t.buy_note %} {{ t.buy_note }}{% endif %}{% endif %}</p>
+        <p class="note warn">{% if t.research_error %}⚠ {{ t.research_error }}{% else %}Not found in any store or on Deezer.{% if t.buy_note %} {{ t.buy_note }}{% endif %}{% endif %}</p>
       {% endif %}
     </div>
     <div class="actions">
       {% if t.buy_url and t.id not in researching %}
-        <a class="btn primary" href="{{ t.buy_url }}" target="_blank" rel="noopener">{% if t.buy_store == "deezer" %}Listen on Deezer{% else %}Buy on {{ t.buy_store_name }}{% endif %} ↗</a>
+        {% if t.buy_store == "deezer" %}
+        <a class="btn primary" href="{{ t.buy_url }}" target="_blank" rel="noopener">Listen on Deezer ↗</a>
+        {% elif t.buy_confidence == "low" %}
+        <a class="btn" href="{{ t.buy_url }}" target="_blank" rel="noopener" title="Not sure this is the right version - check before buying">Check on {{ t.buy_store_name }} ↗</a>
+        {% else %}
+        <a class="btn primary" href="{{ t.buy_url }}" target="_blank" rel="noopener">Buy on {{ t.buy_store_name }} ↗</a>
+        {% endif %}
       {% elif agent_enabled and t.id not in researching and not t.researched_at %}
         <form method="post" action="{{ url_for('research_route') }}" class="inline"><button class="btn" name="id" value="{{ t.id }}">✦ Find best link</button></form>
       {% endif %}
+      {% if t.buy_store != "beatport.com" or t.buy_confidence == "low" %}
+      <a class="btn {% if t.buy_url and t.buy_confidence != 'low' %}ghost{% elif t.buy_url %}primary{% endif %}" href="{{ beatport_search(t) }}" target="_blank" rel="noopener">Search Beatport ↗</a>
+      {% endif %}
       <div class="sub">
+        {% if t.buy_store == "beatport.com" and t.buy_confidence != "low" %}<a href="{{ beatport_search(t) }}" target="_blank" rel="noopener">Beatport search</a>{% endif %}
         {% if t.deezer_url and t.buy_store != "deezer" %}<a href="{{ t.deezer_url }}" target="_blank" rel="noopener">Listen on Deezer</a>{% endif %}
         {% if agent_enabled and t.researched_at and t.id not in researching %}
         <form method="post" action="{{ url_for('research_route') }}" class="inline"><button class="link" name="id" value="{{ t.id }}">Research again</button></form>

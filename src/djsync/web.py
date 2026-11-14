@@ -60,6 +60,7 @@ def create_app(cfg: Config) -> Flask:
     def helpers():
         return {
             "store_links": lambda t: stores.links(t.artist, t.title, cfg.stores),
+            "beatport_search": lambda t: stores.url("beatport", t.artist, t.title),
             "can_reveal": sys.platform == "darwin",
             "researching": researching,
             "agent_enabled": cfg.agent_enabled,

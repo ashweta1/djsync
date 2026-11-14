@@ -36,6 +36,8 @@ from .config import Config
 from .matching import TrackKey, similar
 from .state import Track
 
+# Beatport track or release page -> ("track"|"release", id). The slug part varies.
+BEATPORT_PAGE = re.compile(r"^https://www\.beatport\.com/(?:[a-z]{2}/)?(track|release)/[^/?#]*/(\d+)")
 BEATPORT_TRACK = re.compile(r"^https://(?:www\.)?beatport\.com/track/[^/?#]+/\d+/?$")
 
 # Legitimate places to buy (or officially free-download) a track, by domain.
@@ -76,8 +78,11 @@ You help a DJ buy tracks. Given a track from their Spotify likes, find the best 
 page to buy (download) that exact track.
 
 Order of search:
-1. Beatport first. Search for the track on Beatport (include "beatport" in the \
-query). Beatport track pages look like https://www.beatport.com/track/<slug>/<id>.
+1. Beatport first. Search with a query like "site:beatport.com <artist> <title>", \
+and try once more with "beatport" plus the remix or label name if needed. \
+Beatport track pages look like https://www.beatport.com/track/<slug>/<id>; give \
+the track page if it's in your results, otherwise the release page \
+(https://www.beatport.com/release/<slug>/<id>) that contains the track.
 2. Only if Beatport clearly doesn't have it, search the web for another \
 legitimate store selling the download: Bandcamp, Beatsource, Traxsource, Apple \
 Music/iTunes, Amazon, Qobuz, 7digital, Boomkat, Bleep - or an official free \
@@ -143,10 +148,17 @@ def _describe(t: Track) -> str:
     return "Find where to buy this track:\n" + "\n".join(lines)
 
 
+_BEATPORT_HOST = re.compile(r"^https?://(?:[a-z0-9-]+\.)*beatport\.com(?=/|$)", re.I)
+
+
 def _norm_url(u: str) -> str:
     u = u.strip().split("#")[0].rstrip("/")
-    if "beatport.com" in u:  # Beatport URLs carry tracking query strings
-        u = u.split("?")[0].replace("://beatport.com", "://www.beatport.com")
+    if _BEATPORT_HOST.match(u):
+        # classic.beatport.com, http://, beatport.com and tracking query strings all
+        # point at the same page: use one form.
+        u = _BEATPORT_HOST.sub("https://www.beatport.com", u.split("?")[0])
+        # /fr/track/..., /ja/release/... -> the default-language page
+        u = re.sub(r"^(https://www\.beatport\.com)/[a-z]{2}(?=/(?:track|release|artist|label)/)", r"\1", u)
     return u
 
 
@@ -234,6 +246,18 @@ def backend(cfg: Config) -> str:
     return "api" if os.environ.get("ANTHROPIC_API_KEY") else "claude-code"
 
 
+def _tool_text(content) -> str:
+    """Plain text of a tool result, whether it's a string or a list of blocks."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(_tool_text(b.get("text", b.get("content", ""))) if isinstance(b, dict)
+                         else str(b) for b in content)
+    if isinstance(content, dict):
+        return _tool_text(content.get("text", content.get("content", "")))
+    return ""
+
+
 def ask_claude_code(cfg: Config, t: Track, run=subprocess.run) -> tuple[dict | None, set[str]]:
     """Same search, run through Claude Code (`claude -p`) on your Claude plan."""
     exe = shutil.which(cfg.claude_path or "claude") or cfg.claude_path or "claude"
@@ -248,14 +272,32 @@ def ask_claude_code(cfg: Config, t: Track, run=subprocess.run) -> tuple[dict | N
     if cfg.claude_code_model:
         cmd += ["--model", cfg.claude_code_model]
     cfg.home.mkdir(parents=True, exist_ok=True)
-    try:
-        # Run from djsync's own folder so no project's CLAUDE.md or settings get loaded.
-        proc = run(cmd, capture_output=True, text=True, timeout=300, cwd=str(cfg.home))
-    except FileNotFoundError:
-        raise RuntimeError("Claude Code isn't installed. Install it from https://claude.com/claude-code "
-                           "and sign in with `claude`, or set backend = \"api\" with an API key.")
-    except subprocess.TimeoutExpired:
-        raise RuntimeError("Claude Code took more than 5 minutes; try again.")
+
+    def call(c):
+        try:
+            # Run from djsync's own folder so no project's CLAUDE.md or settings get loaded.
+            return run(c, capture_output=True, text=True, timeout=300, cwd=str(cfg.home))
+        except FileNotFoundError:
+            raise RuntimeError("Claude Code isn't installed (no `claude` command found). Install it "
+                               "from https://claude.com/claude-code and sign in by running `claude` "
+                               "once, or set claude_path under [agent] in ~/.djsync/config.toml.")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Claude Code took more than 5 minutes; try again.")
+
+    proc = call(cmd)
+    if "unknown option" in (proc.stderr or "").lower():
+        # Older Claude Code: drop the newer flags; the prompt still asks for JSON.
+        newer = {"--tools": 1, "--json-schema": 1, "--no-session-persistence": 0}
+        legacy, skip = [], 0
+        for i, a in enumerate(cmd):
+            if skip:
+                skip -= 1
+                continue
+            if a in newer:
+                skip = newer[a]
+                continue
+            legacy.append(a)
+        proc = call(legacy)
 
     seen: set[str] = set()
     result = None
@@ -271,16 +313,18 @@ def ask_claude_code(cfg: Config, t: Track, run=subprocess.run) -> tuple[dict | N
             for block in content if isinstance(content, list) else []:
                 if block.get("type") != "tool_result":
                     continue
-                c = block.get("content")
-                text = c if isinstance(c, str) else json.dumps(c)
-                seen |= {_norm_url(u) for u in _URL.findall(text)}
+                seen |= {_norm_url(u) for u in _URL.findall(_tool_text(block.get("content")))}
     if result is None:
         err = (proc.stderr or proc.stdout or "").strip().splitlines()
-        raise RuntimeError("Claude Code didn't return a result" + (f": {err[-1]}" if err else "."))
+        raise RuntimeError("Claude Code didn't return a result" + (f": {err[-1]}" if err else ".")
+                           + " Run `claude` in Terminal once to check it's installed and signed in.")
     if result.get("is_error") or result.get("subtype") != "success":
         msg = str(result.get("result") or result.get("subtype") or "unknown error")
-        if "limit" in msg.lower():
+        low = msg.lower()
+        if "limit" in low:
             msg = f"Claude plan usage limit reached; try again later. ({msg})"
+        elif "login" in low or "api key" in low or "auth" in low:
+            msg = f"Claude Code isn't signed in. Run `claude` in Terminal and log in. ({msg})"
         raise RuntimeError(f"Claude Code: {msg}")
     answer = result.get("structured_output")
     if not isinstance(answer, dict):
@@ -330,7 +374,10 @@ def research(cfg: Config, t: Track, client=None, opener=urllib.request.urlopen) 
         seen_pages = {u.split("?")[0] for u in seen}
         ok = bool(domain) and url.split("?")[0] in seen_pages
         if domain == "beatport.com":
-            ok = ok and bool(BEATPORT_TRACK.match(url))
+            # Beatport URLs are /track/<slug>/<id> or /release/<slug>/<id>; the slug
+            # varies ("-", "glue", ...) and only the kind + ID matter.
+            m = BEATPORT_PAGE.match(url)
+            ok = bool(m) and m.groups() in {x.groups() for x in map(BEATPORT_PAGE.match, seen) if x}
         if ok:
             mix = answer.get("mix", "").strip()
             title = answer.get("title", "").strip() or t.title
@@ -341,9 +388,12 @@ def research(cfg: Config, t: Track, client=None, opener=urllib.request.urlopen) 
             f.confidence = answer.get("confidence", "medium")
             f.note = answer.get("reason", "")
         else:
-            f.note = "The suggested link wasn't a known store page from the search results, so it was ignored."
+            f.note = (f"The suggested link ({url or 'none'}) wasn't a known store page from "
+                      "the search results, so it was ignored.")
     elif answer and not f.error:
         f.note = answer.get("reason", "") or "Not found in any store."
+    elif not answer and not f.error:
+        f.error = "The store search didn't return an answer."
 
     f.deezer_url = deezer_link(t, opener)
     if not f.store and f.deezer_url:

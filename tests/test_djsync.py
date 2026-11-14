@@ -829,3 +829,117 @@ def test_claude_code_uses_sonnet_by_default(tmp_path):
     run = FakeRun(_cc_output(_answer(url=url), [url]))
     research.ask_claude_code(Config(home=tmp_path), GLUE, run=run)
     assert run.cmd[run.cmd.index("--model") + 1] == "sonnet"
+
+
+# --- "always Deezer" fixes ---------------------------------------------------------------
+
+def test_beatport_link_matches_on_track_id_not_slug():
+    # search result has a "-" slug; Claude answers with the tidy slug: same track
+    client = FakeClaude(_resp(_answer(url="https://www.beatport.com/track/glue/20817455"),
+                              ["https://www.beatport.com/track/-/20817455"]))
+    f = research.research(Config(), GLUE, client, opener=_no_deezer)
+    assert f.store == "beatport.com" and f.url.endswith("/20817455")
+
+
+def test_beatport_different_id_still_rejected():
+    client = FakeClaude(_resp(_answer(url="https://www.beatport.com/track/glue/111"),
+                              ["https://www.beatport.com/track/-/20817455"]))
+    assert research.research(Config(), GLUE, client, opener=_no_deezer).url == ""
+
+
+def test_claude_code_tool_result_as_list_of_blocks(tmp_path):
+    url = "https://www.beatport.com/track/-/20817455"
+    links = _json.dumps([{"title": "x", "url": url}])
+    lines = [
+        {"type": "user", "message": {"content": [{"type": "tool_result", "content": [
+            {"type": "text", "text": f"Links: {links}"}]}]}},
+        {"type": "result", "subtype": "success", "is_error": False, "result": "",
+         "structured_output": _answer(url=url)},
+    ]
+    run = FakeRun("\n".join(_json.dumps(l) for l in lines))
+    answer, seen = research.ask_claude_code(Config(home=tmp_path), GLUE, run=run)
+    assert url in seen
+
+
+def test_claude_code_older_version_retries_without_new_flags(tmp_path):
+    url = "https://www.beatport.com/track/-/1"
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        if "--json-schema" in cmd:
+            return NS(stdout="", stderr="error: unknown option '--json-schema'", returncode=1)
+        return NS(stdout=_cc_output(None, [url], result_msg=_json.dumps(_answer(url=url))),
+                  stderr="", returncode=0)
+    answer, seen = research.ask_claude_code(Config(home=tmp_path), GLUE, run=run)
+    assert answer["url"] == url and len(calls) == 2
+    assert "--tools" not in calls[1] and "--json-schema" not in calls[1]
+    assert "--allowedTools" in calls[1] and "--model" in calls[1]
+
+
+def test_claude_code_not_signed_in_is_explained(tmp_path):
+    run = FakeRun(_cc_output(None, [], is_error=True, subtype="error_during_execution",
+                             result_msg="Invalid API key · Please run /login"))
+    with pytest.raises(RuntimeError, match="isn't signed in"):
+        research.ask_claude_code(Config(home=tmp_path), GLUE, run=run)
+
+
+def test_error_shown_even_when_falling_back_to_deezer(cfg):
+    from djsync.web import create_app
+    def deezer(url, timeout=15):
+        return io.BytesIO(b'{"id": 1, "link": "https://www.deezer.com/track/1"}')
+    f = research.research(cfg, GLUE, FakeClaude(RuntimeError("Claude Code isn't signed in")), opener=deezer)
+    assert f.store == "deezer" and "isn't signed in" in f.error
+    st = State(path=cfg.state_path)
+    st.tracks["1"] = Track(id="1", artist="Bicep", title="Glue", status=APPROVED)
+    research.apply(st.tracks["1"], f)
+    st.save()
+    html = create_app(cfg).test_client().get("/?tab=buy").get_data(as_text=True)
+    assert "isn&#39;t signed in" in html or "isn't signed in" in html
+    assert "Search Beatport" in html and "beatport.com/search/tracks?q=Bicep+Glue" in html
+
+
+@pytest.mark.parametrize("answer_url", [
+    "http://classic.beatport.com/track/glue-original-mix/9597224",
+    "https://beatport.com/track/glue/9597224?utm_source=x",
+    "https://www.beatport.com/track/glue/9597224/",
+])
+def test_beatport_url_variants_are_the_same_page(answer_url):
+    client = FakeClaude(_resp(_answer(url=answer_url),
+                              ["http://classic.beatport.com/track/glue-original-mix/9597224"]))
+    f = research.research(Config(), GLUE, client, opener=_no_deezer)
+    assert f.store == "beatport.com"
+    assert f.url.startswith("https://www.beatport.com/track/") and f.url.endswith("/9597224")
+
+
+def test_beatport_release_page_accepted_when_in_results():
+    rel = "https://www.beatport.com/release/it-goes-like-nanana/4165364"
+    client = FakeClaude(_resp(_answer(url=rel, confidence="medium"), [rel]))
+    f = research.research(Config(), GLUE, client, opener=_no_deezer)
+    assert f.store == "beatport.com" and f.url == rel
+
+
+def test_beatport_release_and_track_ids_dont_mix():
+    client = FakeClaude(_resp(_answer(url="https://www.beatport.com/release/x/123"),
+                              ["https://www.beatport.com/track/x/123"]))
+    assert research.research(Config(), GLUE, client, opener=_no_deezer).url == ""
+
+
+def test_low_confidence_match_is_check_not_buy(cfg):
+    from djsync.web import create_app
+    st = State(path=cfg.state_path)
+    st.tracks["1"] = Track(id="1", artist="Peggy Gou", title="Nanana", status=APPROVED)
+    research.apply(st.tracks["1"], research.Finding(
+        store="beatport.com", store_name="Beatport", url=BP, label="Dance - Peggy Gou", confidence="low"))
+    st.save()
+    html = create_app(cfg).test_client().get("/?tab=buy").get_data(as_text=True)
+    assert "Check on Beatport" in html and "Buy on Beatport" not in html
+    assert "Search Beatport" in html
+
+
+def test_beatport_language_versions_are_the_same_page():
+    client = FakeClaude(_resp(_answer(url="https://www.beatport.com/track/glue/20817455"),
+                              ["https://www.beatport.com/ja/track/-/20817455"]))
+    f = research.research(Config(), GLUE, client, opener=_no_deezer)
+    assert f.url == "https://www.beatport.com/track/glue/20817455"
+    assert research._norm_url("https://www.beatport.com/fr/release/x/1") == "https://www.beatport.com/release/x/1"
