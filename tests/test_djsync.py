@@ -135,7 +135,7 @@ def test_scan_then_import(cfg, monkeypatch):
 
     st = State.load(cfg.state_path)
     assert st.tracks["1"].status == IMPORTED
-    assert st.tracks["1"].playlist.startswith("downloads-")
+    assert st.tracks["1"].playlist.startswith("djsync-downloads-")
     assert st.tracks["3"].status == APPROVED
 
 
@@ -460,17 +460,6 @@ def test_retry_skips_missing_files(cfg, monkeypatch):
     assert r.added == 1 and [t.id for t in r.missing] == ["2"]
 
 
-def test_retry_old_import_already_in_rekordbox(cfg, monkeypatch):
-    st = State(path=cfg.state_path)
-    st.tracks["1"] = Track(id="1", artist="A", title="T", status=IMPORTED, playlist="downloads-x",
-                           file=str(cfg.watch_dir / "a.mp3"))
-    st.save()
-    monkeypatch.setattr(rekordbox, "rekordbox_running", lambda: False)
-    monkeypatch.setattr(rekordbox, "playlist_exists", lambda c, n: True)
-    r = core.retry_db(cfg, State.load(cfg.state_path), "downloads-x")
-    assert r.already and State.load(cfg.state_path).tracks["1"].import_method == "db"
-
-
 def test_retry_button_and_cli(cfg, monkeypatch, capsys):
     from djsync import cli, config as cfgmod
     from djsync.web import create_app
@@ -484,3 +473,97 @@ def test_retry_button_and_cli(cfg, monkeypatch, capsys):
     assert f"{name}: added 2 tracks" in capsys.readouterr().out
     html = client.get("/").get_data(as_text=True)
     assert "In rekordbox" in html and "Retry: add to rekordbox" not in html
+
+
+# --- same-day imports go into one playlist ------------------------------------------
+
+class FakeDB:
+    """Just enough of pyrekordbox's MasterDatabase for write_db."""
+    class Q(list):
+        def first(self):
+            return self[0] if self else None
+
+    class Obj:
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
+    def __init__(self, folder):
+        self.db_directory = folder
+        self.playlists, self.content, self.artists, self.songs = [], [], [], []
+        self.commits = 0
+
+    def _q(self, rows, **kw):
+        return self.Q(r for r in rows if all(getattr(r, k) == v for k, v in kw.items()))
+
+    def get_playlist(self, **kw): return self._q(self.playlists, **kw)
+    def get_content(self, **kw): return self._q(self.content, **kw)
+    def get_artist(self, **kw): return self._q(self.artists, **kw)
+    def get_playlist_songs(self, **kw): return self._q(self.songs, **kw)
+
+    def create_playlist(self, name):
+        p = self.Obj(ID=len(self.playlists) + 1, Name=name, Attribute=0)
+        self.playlists.append(p)
+        return p
+
+    def add_artist(self, name):
+        a = self.Obj(ID=len(self.artists) + 1, Name=name)
+        self.artists.append(a)
+        return a
+
+    def add_content(self, path, **kw):
+        c = self.Obj(ID=len(self.content) + 1, FolderPath=path, **kw)
+        self.content.append(c)
+        return c
+
+    def add_to_playlist(self, pl, c):
+        self.songs.append(self.Obj(PlaylistID=pl.ID, ContentID=c.ID))
+
+    def commit(self): self.commits += 1
+    def rollback(self): pass
+    def close(self): pass
+
+
+def test_write_db_appends_to_same_day_playlist_without_duplicates(cfg, tmp_path, monkeypatch):
+    db = FakeDB(tmp_path)
+    monkeypatch.setattr(rekordbox, "_open_db", lambda c: db)
+    monkeypatch.setattr(rekordbox, "rekordbox_running", lambda: False)
+    a, b = tmp_path / "a.mp3", tmp_path / "b.mp3"
+    rekordbox.write_db(cfg, [(a, "Bicep", "Glue")], "djsync-downloads-2026-11-14")
+    rekordbox.write_db(cfg, [(a, "Bicep", "Glue"), (b, "Bicep", "Apricots")],
+                       "djsync-downloads-2026-11-14")
+    assert [p.Name for p in db.playlists] == ["djsync-downloads-2026-11-14"]
+    assert len(db.content) == 2 and len(db.songs) == 2  # a not added twice
+    assert [x.Name for x in db.artists] == ["Bicep"]
+
+
+def test_default_prefix():
+    assert Config().playlist_prefix == "djsync-downloads-"
+
+
+def test_second_import_same_day_joins_playlist_and_xml(cfg):
+    _approved(cfg, ("Bicep", "Glue"), ("Peggy Gou", "Starry Night"))
+    (cfg.watch_dir / "Bicep - Glue.mp3").write_bytes(b"")
+    first = core.do_import(cfg, State.load(cfg.state_path))
+    (cfg.watch_dir / "Peggy Gou - Starry Night.mp3").write_bytes(b"")
+    second = core.do_import(cfg, State.load(cfg.state_path))
+    assert first.playlist == second.playlist and first.xml_path == second.xml_path
+    root = ET.parse(second.xml_path).getroot()
+    assert sorted(t.get("Name") for t in root.find("COLLECTION")) == ["Glue", "Starry Night"]
+    assert root.find("PLAYLISTS/NODE/NODE").get("Entries") == "2"
+
+    from djsync.web import create_app
+    html = create_app(cfg).test_client().get("/").get_data(as_text=True)
+    assert html.count(first.playlist) >= 1 and "2 tracks" in html
+
+
+def test_retry_after_two_same_day_xml_imports(cfg, tmp_path, monkeypatch):
+    test_second_import_same_day_joins_playlist_and_xml(cfg)
+    db = FakeDB(tmp_path)
+    monkeypatch.setattr(rekordbox, "_open_db", lambda c: db)
+    monkeypatch.setattr(rekordbox, "rekordbox_running", lambda: False)
+    st = State.load(cfg.state_path)
+    [name] = core.retry_targets(st)
+    r = core.retry_db(cfg, st, name)
+    assert r.added == 2 and len(db.playlists) == 1 and len(db.songs) == 2
+    # retrying again changes nothing
+    assert core.retry_targets(State.load(cfg.state_path)) == []

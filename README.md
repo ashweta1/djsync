@@ -2,13 +2,13 @@
 
 Finds songs you've liked on Spotify that aren't in your rekordbox library. You
 untick the ones you don't want, buy the rest from a DJ store, and djsync adds the
-purchased files to a rekordbox playlist named `downloads-YYYY-MM-DD`.
+purchased files to a rekordbox playlist named `djsync-downloads-YYYY-MM-DD`.
 
 ```
 Spotify Liked Songs ──► compare with rekordbox ──► review page (untick what you don't want)
                                                           │
              rekordbox playlist  ◄── import files ◄── buy on Beatport / Bandcamp / Traxsource / Juno
-          downloads-2026-11-14       from ~/Downloads
+   djsync-downloads-2026-11-14       from ~/Downloads
 ```
 
 djsync doesn't download from streaming services. You buy the tracks yourself,
@@ -49,7 +49,7 @@ and djsync finds the files in your downloads folder and imports them.
    Files you attach always take priority over automatic matches. A file picked
    from outside Downloads is copied into your DJ folder, not moved.
 6. **Import**: djsync moves the matched files into your music folder, adds
-   them to rekordbox and creates the `downloads-<date>` playlist.
+   them to rekordbox and adds them to the day's `djsync-downloads-<date>` playlist.
 
 ## Install (macOS)
 
@@ -97,7 +97,7 @@ All the steps can be done from the review page. Or use the command line:
 ```bash
 djsync scan              # list liked songs that aren't in rekordbox
 djsync import --dry-run  # show which downloaded files match approved tracks
-djsync import            # import them and create the downloads-<date> playlist
+djsync import            # import them into today's djsync-downloads-<date> playlist
 djsync import --watch    # keep checking every 30s until all approved tracks arrive
 djsync import --retry    # rekordbox was open last time? quit it, then add those playlists into rekordbox
 ```
@@ -110,7 +110,11 @@ djsync import --retry    # rekordbox was open last time? quit it, then add those
 |---|---|
 | `auto` (default) | Writes directly to rekordbox's database. If that fails, it writes an XML file instead. |
 | `db` | Database only. **rekordbox must be closed.** `master.db` is backed up to `~/.djsync/backups/` before every write. |
-| `xml` | Writes `~/.djsync/xml/downloads-<date>.xml`. In rekordbox, go to **Preferences → Advanced → Database → rekordbox xml** and choose this file. The playlist then appears under **rekordbox xml** in the sidebar: right-click it and choose **Import Playlist**. |
+| `xml` | Writes `~/.djsync/xml/djsync-downloads-<date>.xml`. In rekordbox, go to **Preferences → Advanced → Database → rekordbox xml** and choose this file. The playlist then appears under **rekordbox xml** in the sidebar: right-click it and choose **Import Playlist**. |
+
+All imports on the same day go into the same `djsync-downloads-<date>`
+playlist. A second import adds to it rather than creating a new one, and a
+track is never added twice, so retrying is always safe.
 
 If rekordbox was open during an import, djsync saves the playlist as XML
 and the **Imported** section says **"Not in rekordbox yet"**. Quit rekordbox

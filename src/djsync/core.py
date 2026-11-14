@@ -159,7 +159,16 @@ def do_import(cfg: Config, st: State, dry_run: bool = False) -> ImportResult:
             else:
                 res.error = f"Database write failed ({e}); wrote XML instead."
     if not res.method and cfg.rekordbox_mode != "db":
-        res.xml_path = rekordbox.write_xml(entries, name, cfg.home / "xml" / f"{name}.xml")
+        # One XML per day: include earlier same-day imports that also aren't in
+        # rekordbox yet, so the file always holds the whole day's playlist.
+        earlier = [(Path(t.file), t.artist, t.title) for t in st.by_status(IMPORTED)
+                   if t.playlist == name and t.import_method != "db" and Path(t.file).is_file()]
+        new_paths = {p for p, _, _ in entries}
+        all_entries = [e for e in earlier if e[0] not in new_paths] + entries
+        res.xml_path = rekordbox.write_xml(all_entries, name, cfg.home / "xml" / f"{name}.xml")
+        for t in st.by_status(IMPORTED):
+            if t.playlist == name and t.import_method != "db":
+                t.xml_path = str(res.xml_path)
         res.playlist = name
         res.method = "xml"
 
@@ -188,7 +197,6 @@ class RetryResult:
     playlist: str = ""
     added: int = 0
     missing: list[Track] = field(default_factory=list)
-    already: bool = False
     error: str = ""
 
 
@@ -210,13 +218,6 @@ def retry_db(cfg: Config, st: State, playlist: str) -> RetryResult:
         res.error = "rekordbox is still open. Quit rekordbox (rekordbox menu → Quit) and try again."
         return res
     try:
-        # Imports from before djsync recorded the method may already be in rekordbox.
-        if all(not t.import_method for t in tracks) and rekordbox.playlist_exists(cfg, playlist):
-            for t in tracks:
-                t.import_method = "db"
-            st.save()
-            res.already = True
-            return res
         present = [t for t in tracks if t.file and Path(t.file).is_file()]
         res.missing = [t for t in tracks if t not in present]
         if not present:

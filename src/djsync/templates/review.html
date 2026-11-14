@@ -106,7 +106,7 @@
         <div class="a">
           {{ g.tracks|length }} track{{ "s" if g.tracks|length != 1 }}{% if g.at %} · {{ g.at|replace("T", " ") }}{% endif %} ·
           {% if g.method == "db" %}<span class="ok">In rekordbox</span>
-          {% elif g.method == "xml" %}<span class="warn">Not in rekordbox yet: XML file to import</span>
+          {% elif g.method == "xml" %}<span class="warn">{% if g.pending < g.tracks|length %}{{ g.pending }} of {{ g.tracks|length }} tracks {% endif %}Not in rekordbox yet</span>
           {% else %}<span class="muted">imported before djsync recorded how</span>{% endif %}
         </div>
       </div>

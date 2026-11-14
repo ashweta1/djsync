@@ -44,9 +44,17 @@ def create_app(cfg: Config) -> Flask:
         # Group imports by playlist, newest first.
         groups: dict[str, dict] = {}
         for t in sorted(st.by_status(IMPORTED), key=lambda t: t.imported_at, reverse=True):
-            g = groups.setdefault(t.playlist, {"name": t.playlist, "method": t.import_method,
-                                               "xml": t.xml_path, "at": t.imported_at, "tracks": []})
+            g = groups.setdefault(t.playlist, {"name": t.playlist, "xml": "", "at": t.imported_at,
+                                               "tracks": [], "pending": 0, "unknown": 0})
             g["tracks"].append(t)
+            if t.import_method == "xml":
+                g["pending"] += 1
+                g["xml"] = g["xml"] or t.xml_path
+            elif not t.import_method:
+                g["unknown"] += 1
+        for g in groups.values():
+            g["method"] = ("db" if not g["pending"] and not g["unknown"]
+                           else "xml" if g["pending"] else "")
         playlists = list(groups.values())
         return render_template(
             "review.html",
@@ -233,8 +241,6 @@ def create_app(cfg: Config) -> Flask:
             r = core.retry_db(cfg, st, request.form.get("playlist", ""))
         if r.error:
             flash(r.error, "err")
-        elif r.already:
-            flash(f"'{r.playlist}' is already in rekordbox.", "ok")
         else:
             msg = f"Added {r.added} tracks to rekordbox playlist '{r.playlist}'."
             if r.missing:

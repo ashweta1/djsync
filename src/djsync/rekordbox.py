@@ -72,47 +72,36 @@ def _backup(db, cfg: Config) -> Path | None:
     return dst
 
 
-def _unique_playlist_name(existing: set[str], name: str) -> str:
-    if name not in existing:
-        return name
-    n = 2
-    while f"{name}-{n}" in existing:
-        n += 1
-    return f"{name}-{n}"
-
-
-def playlist_exists(cfg: Config, name: str) -> bool:
-    db = _open_db(cfg)
-    try:
-        return db.get_playlist(Name=name).first() is not None
-    finally:
-        db.close()
-
-
 def write_db(cfg: Config, files: list[tuple[Path, str, str]], playlist_name: str) -> str:
-    """Add files to rekordbox's database and put them in a new playlist.
+    """Add files to rekordbox's database and to the playlist ``playlist_name``.
 
-    ``files`` is a list of (path, artist, title). Returns the playlist name used.
+    The playlist is created if it doesn't exist; otherwise tracks are added to it,
+    so several imports on the same day end up in one playlist. Safe to repeat:
+    files already in the collection aren't added again, and tracks already in the
+    playlist aren't added twice. ``files`` is a list of (path, artist, title).
     """
     if rekordbox_running():
         raise RuntimeError("rekordbox is running. Quit rekordbox and try again.")
     db = _open_db(cfg)
     try:
         _backup(db, cfg)
-        existing = {p.Name for p in db.get_playlist()}
-        playlist_name = _unique_playlist_name(existing, playlist_name)
-        playlist = db.create_playlist(playlist_name)
+        playlist = db.get_playlist(Name=playlist_name, Attribute=0).first()  # 0 = normal playlist
+        if playlist is None:
+            playlist = db.create_playlist(playlist_name)
+        in_playlist = {s.ContentID for s in db.get_playlist_songs(PlaylistID=playlist.ID)}
         for path, artist, title in files:
-            found = db.get_content(FolderPath=str(path)).first()
-            if found is None:
+            content = db.get_content(FolderPath=str(path)).first()
+            if content is None:
                 kwargs = {"Title": title or path.stem}
                 if artist:
                     a = db.get_artist(Name=artist).first()
                     if a is None:
                         a = db.add_artist(artist)
                     kwargs["ArtistID"] = a.ID
-                found = db.add_content(str(path), **kwargs)
-            db.add_to_playlist(playlist, found)
+                content = db.add_content(str(path), **kwargs)
+            if content.ID not in in_playlist:
+                db.add_to_playlist(playlist, content)
+                in_playlist.add(content.ID)
         db.commit()
         return playlist_name
     except Exception:

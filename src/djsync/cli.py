@@ -52,8 +52,6 @@ def cmd_retry(cfg) -> int:
         if r.error:
             print(f"{name}: {r.error}", file=sys.stderr)
             failed = True
-        elif r.already:
-            print(f"{name}: already in rekordbox.")
         else:
             print(f"{name}: added {r.added} tracks to rekordbox.")
             for t in r.missing:
@@ -91,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("review", help="open the review page in your browser")
     r.add_argument("--scan", action="store_true", help="scan Spotify first")
     r.add_argument("--no-browser", action="store_true")
-    i = sub.add_parser("import", help="import purchased files into a downloads-<date> playlist")
+    i = sub.add_parser("import", help="import purchased files into today's djsync-downloads-<date> playlist")
     i.add_argument("--dry-run", action="store_true", help="only show which files match")
     i.add_argument("--retry", action="store_true",
                    help="add playlists that were only saved as XML (rekordbox was open) into rekordbox")

@@ -34,7 +34,7 @@ move_files = true
 mode = "auto"
 # Optional: path to master.db if pyrekordbox can't find it automatically.
 db_path = ""
-playlist_prefix = "downloads-"
+playlist_prefix = "djsync-downloads-"
 
 [match]
 # 0-100. Higher = stricter matching between Spotify and your library.
@@ -62,7 +62,7 @@ class Config:
     move_files: bool = True
     rekordbox_mode: str = "auto"
     rekordbox_db_path: str = ""
-    playlist_prefix: str = "downloads-"
+    playlist_prefix: str = "djsync-downloads-"
     threshold: int = 88
     file_threshold: int = 75
     stores: list[str] = field(
@@ -110,7 +110,7 @@ def load(path: Path = CONFIG_PATH) -> Config:
     if cfg.rekordbox_mode not in ("auto", "db", "xml"):
         raise ValueError("[rekordbox] mode must be auto, db or xml")
     cfg.rekordbox_db_path = rb.get("db_path", "")
-    cfg.playlist_prefix = rb.get("playlist_prefix", "downloads-")
+    cfg.playlist_prefix = rb.get("playlist_prefix", "djsync-downloads-")
     cfg.threshold = int(data.get("match", {}).get("threshold", 88))
     cfg.file_threshold = int(data.get("match", {}).get("file_threshold", 75))
     cfg.stores = list(data.get("stores", {}).get("enabled", cfg.stores))
