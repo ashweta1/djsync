@@ -85,7 +85,6 @@
         {% else %}
           <a class="attach" href="{{ url_for('attach_page', track_id=t.id) }}">Attach file…</a>
           {% for l in store_links(t) %}<a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.name }}</a>{% endfor %}
-          <form method="post" action="{{ url_for('open_searches') }}" class="inline"><button class="chip" name="id" value="{{ t.id }}">All stores</button></form>
         {% endif %}
         <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}" class="inline"><button class="link">Skip</button></form>
       </div>

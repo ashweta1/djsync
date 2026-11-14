@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 AUDIO_EXTS = {".mp3", ".flac", ".wav", ".aiff", ".aif", ".m4a", ".mp4", ".ogg"}
-ARCHIVE_HINT = {".zip"}  # Bandcamp/Juno sometimes deliver zips - we unpack them
+ARCHIVE_HINT = {".zip"}  # Bandcamp sometimes delivers zips - we unpack them
 
 _LEADING_ID = re.compile(r"^\d{4,}[_\-\s]+")       # Beatport-style "12345678_Title"
 _LEADING_TRACKNO = re.compile(r"^\d{1,2}[\s.\-_]+")  # "01 - Artist - Title"

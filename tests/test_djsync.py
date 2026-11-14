@@ -203,18 +203,9 @@ def test_open_all_on_store_skips_tracks_with_files(cfg, monkeypatch):
     assert opened == ["https://www.beatport.com/search/tracks?q=Peggy+Gou+Starry+Night"]
 
 
-def test_open_one_track_on_all_stores(cfg, monkeypatch):
-    from djsync.web import create_app
-
-    opened = []
-    monkeypatch.setattr(stores.webbrowser, "open_new_tab", opened.append)
-    st = State(path=cfg.state_path)
-    st.tracks["2"] = Track(id="2", artist="Peggy Gou", title="Starry Night", status=APPROVED)
-    st.save()
-    create_app(cfg).test_client().post("/open", data={"id": "2"})
-    assert [u.split("/")[2] for u in opened] == [
-        "www.beatport.com", "bandcamp.com", "www.traxsource.com", "www.junodownload.com",
-        "www.deezer.com"]
+def test_removed_stores_are_ignored_in_old_configs():
+    links = stores.links("Bicep", "Glue", ["beatport", "traxsource", "juno", "deezer"])
+    assert [l["key"] for l in links] == ["beatport", "deezer"]
 
 
 def test_open_tabs_is_capped(monkeypatch):

@@ -46,7 +46,7 @@ file_threshold = 75
 
 [stores]
 # Stores to show buy links for, in order.
-enabled = ["beatport", "bandcamp", "traxsource", "juno", "deezer"]
+enabled = ["beatport", "bandcamp", "deezer"]
 
 [web]
 port = 5055
@@ -66,7 +66,7 @@ class Config:
     threshold: int = 88
     file_threshold: int = 75
     stores: list[str] = field(
-        default_factory=lambda: ["beatport", "bandcamp", "traxsource", "juno", "deezer"]
+        default_factory=lambda: ["beatport", "bandcamp", "deezer"]
     )
     port: int = 5055
     home: Path = HOME

@@ -101,23 +101,13 @@ def create_app(cfg: Config) -> Flask:
 
     @app.post("/open")
     def open_searches():
-        """Open store searches as browser tabs.
-
-        store=<key> + no id: that store, for every approved track without a file yet.
-        id=<track id> + no store: that track, on every enabled store.
-        """
+        """Open one store's search, as browser tabs, for every approved track without a file yet."""
         st = state()
-        store, track_id = request.form.get("store"), request.form.get("id")
-        if track_id:
-            t = st.tracks.get(track_id)
-            if not t:
-                return "unknown track", 404
-            urls = [l["url"] for l in stores.links(t.artist, t.title, cfg.stores)]
-        elif store in stores.STORES:
-            matched, waiting = core.match_files(cfg, st)
-            urls = [stores.url(store, t.artist, t.title) for t in waiting]
-        else:
-            return "need store or id", 400
+        store = request.form.get("store")
+        if store not in stores.STORES:
+            return "unknown store", 400
+        _, waiting = core.match_files(cfg, st)
+        urls = [stores.url(store, t.artist, t.title) for t in waiting]
         n = stores.open_tabs(urls)
         if len(urls) > n:
             flash(f"Opened the first {n} of {len(urls)} searches. Click again after "

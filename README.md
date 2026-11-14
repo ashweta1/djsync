@@ -7,7 +7,7 @@ purchased files to a rekordbox playlist named `djsync-downloads-YYYY-MM-DD`.
 ```
 Spotify Liked Songs ──► compare with rekordbox ──► review page (untick what you don't want)
                                                           │
-             rekordbox playlist  ◄── import files ◄── buy on Beatport / Bandcamp / Traxsource / Juno
+             rekordbox playlist  ◄── import files ◄── buy on Beatport / Bandcamp
    djsync-downloads-2026-11-14       from ~/Downloads
 ```
 
@@ -25,10 +25,9 @@ and djsync finds the files in your downloads folder and imports them.
    Untick the ones you don't want and click **Approve**. Tracks you untick
    aren't suggested again, but you can restore them from the Skipped list.
 3. **Buy**: each approved track has one-click search links for Beatport,
-   Bandcamp, Traxsource, Juno and Deezer. **Open all on Beatport** opens a
-   Beatport search tab for every approved track that doesn't have a file yet
-   (up to 30 at a time), and there's a button for each of the other stores too.
-   **All stores** on a track opens its search on every store. Search terms
+   Bandcamp and Deezer. **Open all on Beatport** opens a Beatport search tab
+   for every approved track that doesn't have a file yet (up to 30 at a time),
+   and there's a button for each of the other stores too. Search terms
    leave out "(Original Mix)" and "feat." but keep remix names. Buy the track
    and let it download. Deezer doesn't sell downloads; its link is there so you
    can listen and check you have the right version.
@@ -144,7 +143,7 @@ threshold = 88               # 0-100; raise it if wrong tracks match, lower it i
 file_threshold = 75          # 0-100; lower it if downloaded files aren't found, raise it if the wrong file is picked
 
 [stores]
-enabled = ["beatport", "bandcamp", "traxsource", "juno", "deezer"]   # also: "itunes", "amazon"
+enabled = ["beatport", "bandcamp", "deezer"]   # also: "itunes", "amazon"
 ```
 
 State such as pending, approved and skipped tracks is stored in
