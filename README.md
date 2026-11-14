@@ -25,16 +25,31 @@ and djsync finds the files in your downloads folder and imports them.
    Untick the ones you don't want and click **Approve**. Tracks you untick
    aren't suggested again, but you can restore them from the Skipped list.
 3. **Buy**: each approved track has one-click search links for Beatport,
-   Bandcamp, Traxsource and Juno. **Open all on Beatport** opens a Beatport
-   search tab for every approved track that doesn't have a file yet (up to 30
-   at a time), and there's a button for each of the other stores too. **All
-   stores** on a track opens its search on every store. Search terms leave out
-   "(Original Mix)" and "feat." but keep remix names. Buy the track and let it
-   download.
-4. **Import**: djsync finds the purchased files in your downloads folder,
-   unpacking zip files if needed, and matches them to approved tracks by tag
-   or filename. It moves them into your music folder, adds them to rekordbox
-   and creates the `downloads-<date>` playlist.
+   Bandcamp, Traxsource, Juno and Deezer. **Open all on Beatport** opens a
+   Beatport search tab for every approved track that doesn't have a file yet
+   (up to 30 at a time), and there's a button for each of the other stores too.
+   **All stores** on a track opens its search on every store. Search terms
+   leave out "(Original Mix)" and "feat." but keep remix names. Buy the track
+   and let it download. Deezer doesn't sell downloads; its link is there so you
+   can listen and check you have the right version.
+4. **Find the files**: djsync looks in your downloads folder **and all its
+   subfolders**, including unpacked zip files. Hidden folders and your DJ
+   library folder are skipped. It matches files by their tags and by filename,
+   so names like `bicep_glue_320.mp3`, `Glue [Bicep] 24bit.wav` or
+   `03 So U Kno.flac` inside an artist folder are still found. A different
+   remix of the same song is **not** matched. Click **Rescan Downloads**
+   after new files arrive.
+5. **Attach a file by hand**: if a file isn't picked up, or the wrong one was,
+   click **Attach file…** or **Wrong file?** on the track. You can then:
+   - pick from all audio files in Downloads, best match first, with a filter box
+   - click **Choose in Finder…** to open a normal macOS file picker and choose
+     the file from anywhere
+   - paste a path (in Finder, ⌥⌘C copies a file's path)
+
+   Files you attach always take priority over automatic matches. A file picked
+   from outside Downloads is copied into your DJ folder, not moved.
+6. **Import**: djsync moves the matched files into your music folder, adds
+   them to rekordbox and creates the `downloads-<date>` playlist.
 
 ## Install (macOS)
 
@@ -116,9 +131,10 @@ move_files = true            # false = copy instead of move
 
 [match]
 threshold = 88               # 0-100; raise it if wrong tracks match, lower it if owned tracks still show up
+file_threshold = 75          # 0-100; lower it if downloaded files aren't found, raise it if the wrong file is picked
 
 [stores]
-enabled = ["beatport", "bandcamp", "traxsource", "juno"]   # also: "itunes", "amazon"
+enabled = ["beatport", "bandcamp", "traxsource", "juno", "deezer"]   # also: "itunes", "amazon"
 ```
 
 State such as pending, approved and skipped tracks is stored in

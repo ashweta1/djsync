@@ -213,7 +213,8 @@ def test_open_one_track_on_all_stores(cfg, monkeypatch):
     st.save()
     create_app(cfg).test_client().post("/open", data={"id": "2"})
     assert [u.split("/")[2] for u in opened] == [
-        "www.beatport.com", "bandcamp.com", "www.traxsource.com", "www.junodownload.com"]
+        "www.beatport.com", "bandcamp.com", "www.traxsource.com", "www.junodownload.com",
+        "www.deezer.com"]
 
 
 def test_open_tabs_is_capped(monkeypatch):
@@ -221,3 +222,132 @@ def test_open_tabs_is_capped(monkeypatch):
     monkeypatch.setattr(stores.webbrowser, "open_new_tab", opened.append)
     assert stores.open_tabs([f"u{i}" for i in range(50)]) == stores.MAX_TABS
     assert len(opened) == stores.MAX_TABS
+
+
+# --- flexible file matching, subfolders, attach ------------------------------------
+
+from djsync.matching import file_score
+
+
+def _fs(artist, title, filename, tag_artist="", tag_title=""):
+    return file_score(artist, title, tag_artist, tag_title, f"{tag_artist} {tag_title} {filename}")
+
+
+@pytest.mark.parametrize("filename", [
+    "Bicep - Glue (Original Mix)",
+    "bicep_glue_320",
+    "Glue [Bicep] 24bit",
+    "01. Glue - Bicep",
+    "BICEP-GLUE-WEB-2017",
+    "Bicep - Glue (Radio Edit)",
+])
+def test_file_score_flexible_names(filename):
+    assert _fs("Bicep", "Glue", filename) >= 75
+
+
+@pytest.mark.parametrize("filename", [
+    "Bicep - Glue (Hammer Remix)",      # different version
+    "Bicep - Apricots",                 # different track
+    "Someone Else - Glue",              # different artist
+])
+def test_file_score_rejects_wrong_files(filename):
+    assert _fs("Bicep", "Glue", filename) < 75
+
+
+def test_file_score_wants_remix_when_track_is_remix():
+    assert _fs("Bicep", "Glue (Hammer Remix)", "Bicep - Glue (Hammer Remix)") >= 75
+    assert _fs("Bicep", "Glue (Hammer Remix)", "Bicep - Glue (Original Mix)") < 75
+
+
+def test_tags_beat_meaningless_filename():
+    assert _fs("Bicep", "Glue", "track01", tag_artist="Bicep", tag_title="Glue") == 100
+
+
+def _approved(cfg, *tracks):
+    st = State(path=cfg.state_path)
+    for i, (a, t) in enumerate(tracks, 1):
+        st.tracks[str(i)] = Track(id=str(i), artist=a, title=t, status=APPROVED)
+    st.save()
+    return st
+
+
+def test_subfolders_scanned_hidden_and_library_skipped(cfg):
+    from djsync import files
+    (cfg.watch_dir / "Beatport" / "2026-11").mkdir(parents=True)
+    (cfg.watch_dir / "Beatport" / "2026-11" / "bicep_glue.mp3").write_bytes(b"")
+    (cfg.watch_dir / ".Trash").mkdir()
+    (cfg.watch_dir / ".Trash" / "Bicep - Glue.mp3").write_bytes(b"")
+    cfg.library_dir = cfg.watch_dir / "DJ"
+    cfg.library_dir.mkdir()
+    (cfg.library_dir / "Peggy Gou - Starry Night.mp3").write_bytes(b"")
+    names = [f.path.name for f in files.scan(cfg.watch_dir, exclude=[cfg.library_dir])]
+    assert names == ["bicep_glue.mp3"]
+
+    st = _approved(cfg, ("Bicep", "Glue"), ("Peggy Gou", "Starry Night"))
+    matched, waiting = core.match_files(cfg, st)
+    assert [(t.id, p.name) for t, p in matched] == [("1", "bicep_glue.mp3")]
+    assert [t.id for t in waiting] == ["2"]
+
+
+def test_best_file_wins_and_each_file_used_once(cfg):
+    (cfg.watch_dir / "Bicep - Glue.mp3").write_bytes(b"")
+    (cfg.watch_dir / "Bicep - Glue (Hammer Remix).mp3").write_bytes(b"")
+    st = _approved(cfg, ("Bicep", "Glue (Hammer Remix)"), ("Bicep", "Glue"))
+    matched, _ = core.match_files(cfg, st)
+    assert {t.title: p.name for t, p in matched} == {
+        "Glue": "Bicep - Glue.mp3",
+        "Glue (Hammer Remix)": "Bicep - Glue (Hammer Remix).mp3",
+    }
+
+
+def test_attach_file_from_elsewhere_and_import_copies_it(cfg, tmp_path):
+    from djsync.web import create_app
+    _approved(cfg, ("Bicep", "Glue"))
+    elsewhere = tmp_path / "usb" / "weird name 07.aiff"
+    elsewhere.parent.mkdir()
+    elsewhere.write_bytes(b"")
+    client = create_app(cfg).test_client()
+
+    page = client.get("/attach/1").get_data(as_text=True)
+    assert "Pick the file" in page
+
+    client.post("/attach/1", data={"path": str(elsewhere)})
+    st = State.load(cfg.state_path)
+    assert st.tracks["1"].file == str(elsewhere.resolve())
+    html = client.get("/").get_data(as_text=True)
+    assert "Attached" in html and "weird name 07.aiff" in html
+
+    res = core.do_import(cfg, State.load(cfg.state_path))
+    assert res.method == "xml"
+    assert elsewhere.exists()  # picked from outside Downloads -> copied, not moved
+    assert (cfg.library_dir / "weird name 07.aiff").exists()
+
+
+def test_attach_rejects_non_audio(cfg, tmp_path):
+    from djsync.web import create_app
+    _approved(cfg, ("Bicep", "Glue"))
+    bad = tmp_path / "notes.txt"
+    bad.write_text("x")
+    create_app(cfg).test_client().post("/attach/1", data={"path": str(bad)})
+    assert State.load(cfg.state_path).tracks["1"].file == ""
+
+
+def test_detach_and_rescan_button(cfg, tmp_path):
+    from djsync.web import create_app
+    _approved(cfg, ("Bicep", "Glue"))
+    f = cfg.watch_dir / "x.mp3"
+    f.write_bytes(b"")
+    client = create_app(cfg).test_client()
+    client.post("/attach/1", data={"path": str(f)})
+    client.post("/detach/1")
+    assert State.load(cfg.state_path).tracks["1"].file == ""
+    assert "Rescan Downloads" in client.get("/").get_data(as_text=True)
+    (cfg.watch_dir / "sub").mkdir()
+    (cfg.watch_dir / "sub" / "Bicep - Glue.wav").write_bytes(b"")
+    r = client.post("/rescan-downloads", follow_redirects=True).get_data(as_text=True)
+    assert "2 audio files, 1 matched, 0 still missing" in r
+
+
+def test_deezer_link():
+    assert stores.url("deezer", "Peggy Gou", "Starry Night") == \
+        "https://www.deezer.com/search/Peggy%20Gou%20Starry%20Night/track"

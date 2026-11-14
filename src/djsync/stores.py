@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import webbrowser
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 
 from .matching import _BRACKETED_NOISE, _DASH_NOISE, _FEAT
 
@@ -14,6 +14,7 @@ STORES: dict[str, tuple[str, str]] = {
     "bandcamp": ("Bandcamp", "https://bandcamp.com/search?q={q}&item_type=t"),
     "traxsource": ("Traxsource", "https://www.traxsource.com/search?term={q}"),
     "juno": ("Juno Download", "https://www.junodownload.com/search/?q%5Ball%5D%5B%5D={q}"),
+    "deezer": ("Deezer", "https://www.deezer.com/search/{q}/track"),
     "itunes": ("Apple Music / iTunes", "https://music.apple.com/search?term={q}"),
     "amazon": ("Amazon Music", "https://www.amazon.com/s?k={q}&i=digital-music"),
 }
@@ -36,7 +37,10 @@ def search_query(artist: str, title: str) -> str:
 
 
 def url(store: str, artist: str, title: str) -> str:
-    return STORES[store][1].format(q=quote_plus(search_query(artist, title)))
+    q = search_query(artist, title)
+    # Deezer takes the query as a path segment, so spaces must be %20, not +
+    enc = quote(q, safe="") if store == "deezer" else quote_plus(q)
+    return STORES[store][1].format(q=enc)
 
 
 def links(artist: str, title: str, enabled: list[str]) -> list[dict]:

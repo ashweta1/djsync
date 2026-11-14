@@ -10,7 +10,7 @@ from pathlib import Path
 from . import files as filemod
 from . import rekordbox, spotify
 from .config import Config
-from .matching import Index, TrackKey
+from .matching import Index, TrackKey, file_score
 from .state import APPROVED, IMPORTED, PENDING, State, Track
 
 
@@ -58,20 +58,62 @@ class ImportResult:
     error: str = ""
 
 
+def _scan_downloads(cfg: Config) -> list[filemod.AudioFile]:
+    # Don't look inside the DJ library folder if it happens to sit under Downloads.
+    return filemod.scan(cfg.watch_dir, exclude=[cfg.library_dir])
+
+
+def score(t: Track, f: filemod.AudioFile) -> int:
+    return file_score(t.artist, t.title, f.artist, f.title, f.text)
+
+
+def candidates(cfg: Config, t: Track, limit: int = 40) -> list[tuple[filemod.AudioFile, int]]:
+    """Files in Downloads ranked by how well they match ``t`` (for the attach page)."""
+    ranked = [(f, score(t, f)) for f in _scan_downloads(cfg)]
+    ranked.sort(key=lambda x: x[1], reverse=True)
+    return ranked[:limit]
+
+
 def match_files(cfg: Config, st: State) -> tuple[list[tuple[Track, Path]], list[Track]]:
+    """Pair approved tracks with downloaded files.
+
+    Files you attached by hand always win. The rest are matched on tags and
+    filename, best score first, each file used at most once.
+    """
     approved = st.by_status(APPROVED)
     if not approved:
         return [], []
-    audio = filemod.scan(cfg.watch_dir)
-    index = Index([TrackKey.of(f.artist, f.title) for f in audio], cfg.threshold)
-    matched, waiting, used = [], [], set()
+    matched: list[tuple[Track, Path]] = []
+    auto: list[Track] = []
+    used: set[Path] = set()
     for t in approved:
-        i = index.find(TrackKey.of(t.artist, t.title))
-        if i is not None and i not in used:
-            used.add(i)
-            matched.append((t, audio[i].path))
+        if t.file and Path(t.file).is_file():
+            matched.append((t, Path(t.file)))
+            used.add(Path(t.file).resolve())
+        else:
+            auto.append(t)
+
+    audio = [f for f in _scan_downloads(cfg) if f.path.resolve() not in used] if auto else []
+    pairs = []
+    for ti, t in enumerate(auto):
+        for fi, f in enumerate(audio):
+            sc = score(t, f)
+            if sc >= cfg.file_threshold:
+                pairs.append((sc, ti, fi))
+    pairs.sort(reverse=True)
+    got_t, got_f = {}, set()
+    for sc, ti, fi in pairs:
+        if ti not in got_t and fi not in got_f:
+            got_t[ti] = fi
+            got_f.add(fi)
+    waiting = []
+    for ti, t in enumerate(auto):
+        if ti in got_t:
+            matched.append((t, audio[got_t[ti]].path))
         else:
             waiting.append(t)
+    order = {t.id: i for i, t in enumerate(approved)}
+    matched.sort(key=lambda m: order[m[0].id])
     return matched, waiting
 
 
@@ -84,7 +126,8 @@ def _place(cfg: Config, src: Path) -> Path:
     while dst.exists():
         dst = cfg.library_dir / f"{src.stem} ({n}){src.suffix}"
         n += 1
-    (shutil.move if cfg.move_files else shutil.copy2)(src, dst)
+    from_downloads = cfg.watch_dir.resolve() in src.resolve().parents
+    (shutil.move if cfg.move_files and from_downloads else shutil.copy2)(src, dst)
     return dst
 
 
@@ -121,10 +164,14 @@ def do_import(cfg: Config, st: State, dry_run: bool = False) -> ImportResult:
         for t, p in placed:
             t.status, t.file, t.playlist = IMPORTED, str(p), res.playlist
         res.matched = placed
-    elif cfg.move_files:
-        # Nothing was written: put the files back so the next import finds them.
+    else:
+        # Nothing was written: undo the moves/copies so the next import starts clean.
         for src, dst in moves:
-            if src != dst and dst.exists() and not src.exists():
+            if src == dst or not dst.exists():
+                continue
+            if src.exists():
+                dst.unlink()  # it was a copy
+            else:
                 shutil.move(dst, src)
     st.save()
     return res

@@ -19,6 +19,19 @@ class AudioFile:
     artist: str
     title: str
 
+    @property
+    def text(self) -> str:
+        """Everything we know about the file, for flexible matching."""
+        return f"{self.artist} {self.title} {self.path.stem.replace('_', ' ')}"
+
+
+# (path, mtime, size) -> AudioFile, so re-scanning a big Downloads folder is fast.
+_CACHE: dict[tuple[str, float, int], AudioFile] = {}
+
+
+def clear_cache() -> None:
+    _CACHE.clear()
+
 
 def parse_filename(stem: str) -> tuple[str, str]:
     """Best-effort 'Artist - Title' from a filename stem."""
@@ -48,6 +61,24 @@ def read_tags(path: Path) -> tuple[str, str]:
 
 
 def describe(path: Path) -> AudioFile:
+    try:
+        stat = path.stat()
+        key = (str(path), stat.st_mtime, stat.st_size)
+    except OSError:
+        key = None
+    if key in _CACHE:
+        return _CACHE[key]
+    f = _describe(path)
+    if key:
+        _CACHE[key] = f
+    return f
+
+
+def is_audio(path: Path) -> bool:
+    return path.is_file() and path.suffix.lower() in AUDIO_EXTS and not path.name.startswith(".")
+
+
+def _describe(path: Path) -> AudioFile:
     artist, title = read_tags(path)
     if not title:
         artist, title = parse_filename(path.stem)
@@ -71,12 +102,26 @@ def unpack_archives(folder: Path) -> None:
             continue
 
 
-def scan(folder: Path, recursive: bool = True) -> list[AudioFile]:
+def scan(folder: Path, recursive: bool = True, exclude: list[Path] = ()) -> list[AudioFile]:
+    """All audio files in ``folder`` and (by default) every subfolder, newest first.
+
+    Hidden folders (".something") and anything under ``exclude`` are skipped.
+    """
     if not folder.exists():
         return []
     unpack_archives(folder)
+    excluded = [e.resolve() for e in exclude if e.exists()]
     it = folder.rglob("*") if recursive else folder.glob("*")
-    return [
-        describe(p) for p in it
-        if p.is_file() and p.suffix.lower() in AUDIO_EXTS and not p.name.startswith(".")
-    ]
+    out = []
+    for p in it:
+        rel = p.relative_to(folder).parts
+        if any(part.startswith(".") for part in rel[:-1]):
+            continue
+        if not is_audio(p):
+            continue
+        rp = p.resolve()
+        if any(e == rp or e in rp.parents for e in excluded):
+            continue
+        out.append(describe(p))
+    out.sort(key=lambda f: f.path.stat().st_mtime, reverse=True)
+    return out

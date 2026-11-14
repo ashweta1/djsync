@@ -39,10 +39,14 @@ playlist_prefix = "downloads-"
 [match]
 # 0-100. Higher = stricter matching between Spotify and your library.
 threshold = 88
+# 0-100. How closely a downloaded file must match an approved track. Files are
+# matched on tags AND filename, so this can be looser. Lower it if files aren't
+# found; raise it if the wrong file gets picked.
+file_threshold = 75
 
 [stores]
 # Stores to show buy links for, in order.
-enabled = ["beatport", "bandcamp", "traxsource", "juno"]
+enabled = ["beatport", "bandcamp", "traxsource", "juno", "deezer"]
 
 [web]
 port = 5055
@@ -60,8 +64,9 @@ class Config:
     rekordbox_db_path: str = ""
     playlist_prefix: str = "downloads-"
     threshold: int = 88
+    file_threshold: int = 75
     stores: list[str] = field(
-        default_factory=lambda: ["beatport", "bandcamp", "traxsource", "juno"]
+        default_factory=lambda: ["beatport", "bandcamp", "traxsource", "juno", "deezer"]
     )
     port: int = 5055
     home: Path = HOME
@@ -107,6 +112,7 @@ def load(path: Path = CONFIG_PATH) -> Config:
     cfg.rekordbox_db_path = rb.get("db_path", "")
     cfg.playlist_prefix = rb.get("playlist_prefix", "downloads-")
     cfg.threshold = int(data.get("match", {}).get("threshold", 88))
+    cfg.file_threshold = int(data.get("match", {}).get("file_threshold", 75))
     cfg.stores = list(data.get("stores", {}).get("enabled", cfg.stores))
     cfg.port = int(data.get("web", {}).get("port", 5055))
     return cfg

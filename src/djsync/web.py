@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 import threading
 import webbrowser
+from pathlib import Path
 
 from flask import Flask, flash, redirect, render_template, request, url_for
 
-from . import core, stores
+from . import core, files, stores
 from .config import Config
 from .state import APPROVED, IMPORTED, PENDING, SKIPPED, State
 
@@ -28,7 +31,7 @@ def create_app(cfg: Config) -> Flask:
     def index():
         st = state()
         matched, _ = core.match_files(cfg, st)
-        found = {t.id: p.name for t, p in matched}
+        found = {t.id: p for t, p in matched}
         imported = st.by_status(IMPORTED)
         return render_template(
             "review.html",
@@ -93,6 +96,75 @@ def create_app(cfg: Config) -> Flask:
                   "you've bought these to open the next ones.", "ok")
         return redirect(url_for("index") + "#approved")
 
+    @app.post("/rescan-downloads")
+    def rescan_downloads():
+        files.clear_cache()
+        st = state()
+        n = len(core._scan_downloads(cfg))
+        matched, waiting = core.match_files(cfg, st)
+        flash(f"Scanned {cfg.watch_dir} and its subfolders: {n} audio files, "
+              f"{len(matched)} matched, {len(waiting)} still missing.", "ok")
+        return redirect(url_for("index") + "#approved")
+
+    @app.get("/attach/<track_id>")
+    def attach_page(track_id: str):
+        st = state()
+        t = st.tracks.get(track_id)
+        if not t:
+            return "unknown track", 404
+        return render_template(
+            "attach.html", t=t, candidates=core.candidates(cfg, t),
+            threshold=cfg.file_threshold, watch_dir=cfg.watch_dir,
+            can_browse=sys.platform == "darwin",
+        )
+
+    def _attach(track_id: str, path: Path):
+        if not files.is_audio(path):
+            flash(f"Not an audio file: {path}", "err")
+            return redirect(url_for("attach_page", track_id=track_id))
+        with lock:
+            st = state()
+            t = st.tracks.get(track_id)
+            if not t:
+                return "unknown track", 404
+            t.file = str(path.resolve())
+            if t.status != APPROVED:
+                t.status = APPROVED
+            st.save()
+        flash(f"Attached {path.name} to {t.artist} - {t.title}.", "ok")
+        return redirect(url_for("index") + "#approved")
+
+    @app.post("/attach/<track_id>")
+    def attach(track_id: str):
+        return _attach(track_id, Path(request.form.get("path", "")).expanduser())
+
+    @app.post("/attach/<track_id>/browse")
+    def attach_browse(track_id: str):
+        """Open a native macOS file picker (the server runs on your Mac)."""
+        start = cfg.watch_dir if cfg.watch_dir.exists() else Path.home()
+        script = (
+            'POSIX path of (choose file with prompt "Choose the audio file for this track" '
+            f'default location (POSIX file "{str(start).replace(chr(34), "")}"))'
+        )
+        try:
+            out = subprocess.run(["osascript", "-e", script], capture_output=True,
+                                 text=True, timeout=600)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            flash("Couldn't open the file picker. Paste the file path instead.", "err")
+            return redirect(url_for("attach_page", track_id=track_id))
+        if out.returncode != 0 or not out.stdout.strip():
+            return redirect(url_for("attach_page", track_id=track_id))  # cancelled
+        return _attach(track_id, Path(out.stdout.strip()))
+
+    @app.post("/detach/<track_id>")
+    def detach(track_id: str):
+        with lock:
+            st = state()
+            if track_id in st.tracks:
+                st.tracks[track_id].file = ""
+                st.save()
+        return redirect(url_for("index") + "#approved")
+
     @app.post("/move/<track_id>/<status>")
     def move(track_id: str, status: str):
         if status not in (PENDING, APPROVED, SKIPPED):
@@ -100,6 +172,8 @@ def create_app(cfg: Config) -> Flask:
         with lock:
             st = state()
             st.set_status([track_id], status)
+            if status != APPROVED and track_id in st.tracks:
+                st.tracks[track_id].file = ""
             st.save()
         return redirect(url_for("index"))
 

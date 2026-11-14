@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attach file · djsync</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<main>
+  <a class="back" href="{{ url_for('index') }}#approved">← Back</a>
+  <header style="margin-top:8px">
+    <div>
+      <h1>{{ t.title }}</h1>
+      <div class="muted">{{ t.artist }}{% if t.album %} · {{ t.album }}{% endif %}</div>
+    </div>
+  </header>
+
+  {% for cat, msg in get_flashed_messages(with_categories=true) %}
+    <div class="flash {{ cat }}">{{ msg }}</div>
+  {% endfor %}
+
+  <h2>Pick the file</h2>
+  <div class="card">
+    <form method="post" class="picker" action="{{ url_for('attach', track_id=t.id) }}">
+      {% if can_browse %}
+      <button class="primary" type="submit" formaction="{{ url_for('attach_browse', track_id=t.id) }}"
+              title="Opens a Finder window on your Mac">Choose in Finder…</button>
+      <span class="muted">or paste a path:</span>
+      {% endif %}
+      <input type="text" name="path" placeholder="/Users/you/Downloads/track.mp3" aria-label="File path">
+      <button type="submit">Attach</button>
+    </form>
+  </div>
+  <p class="muted">Tip: in Finder, select the file and press ⌥⌘C (Option-Command-C) to copy its path.</p>
+
+  <h2>Files in Downloads <span class="n">{{ candidates|length }}</span></h2>
+  <p class="muted">All audio files in <code>{{ watch_dir }}</code> and its subfolders, best match first. Scores of {{ threshold }}+ are matched automatically.</p>
+  <div class="card">
+    {% if candidates %}
+    <div class="bar"><input class="filter" type="search" placeholder="Filter by name…" oninput="filter(this.value)" aria-label="Filter files"></div>
+    {% for f, score in candidates %}
+    <form method="post" action="{{ url_for('attach', track_id=t.id) }}" class="row cand" data-text="{{ (f.path.name ~ ' ' ~ f.artist ~ ' ' ~ f.title)|lower }}">
+      <span class="score {% if score >= threshold %}good{% endif %}">{{ score }}%</span>
+      <div class="meta">
+        <div class="t">{{ f.path.name }}</div>
+        <div class="path">{% if f.title %}{% if f.artist %}{{ f.artist }} – {% endif %}{{ f.title }} · {% endif %}{{ f.path.parent }}</div>
+      </div>
+      <input type="hidden" name="path" value="{{ f.path }}">
+      <button type="submit">Use this</button>
+    </form>
+    {% endfor %}
+    {% else %}
+    <div class="empty">No audio files found in {{ watch_dir }}. Use “Choose in Finder…” to pick one from anywhere.</div>
+    {% endif %}
+  </div>
+</main>
+<script>
+  function filter(q) {
+    q = q.toLowerCase().trim();
+    document.querySelectorAll('.cand').forEach(r => r.style.display = !q || r.dataset.text.includes(q) ? '' : 'none');
+  }
+</script>
+</body>
+</html>
