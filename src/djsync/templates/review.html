@@ -119,7 +119,7 @@
       {% set todo = to_buy|rejectattr("researched_at")|rejectattr("id", "in", researching)|list %}
       {% if agent_enabled and todo %}
       <form method="post" action="{{ url_for('research_route') }}" class="inline">
-        <button class="btn sm" type="submit" title="Find the best place to buy each track">✦ Find links ({{ todo|length }})</button>
+        <button class="btn sm" type="submit" title="Find the best place to buy each track not checked yet">✦ Find best sources ({{ todo|length }})</button>
       </form>
       {% endif %}
       <details class="menu">
@@ -166,13 +166,11 @@
         {% endif %}
 
         <div class="card-foot">
-          {% if agent_enabled and t.id not in researching and not t.researched_at %}
-          <form method="post" action="{{ url_for('research_route') }}" class="inline"><button class="btn sm" name="id" value="{{ t.id }}">✦ Find best link</button></form>
+          {% if agent_enabled and t.id not in researching %}
+          <form method="post" action="{{ url_for('research_route') }}" class="inline"><button class="btn sm" name="id" value="{{ t.id }}"
+            title="{% if t.researched_at %}Ask the agent to look again{% else %}Find the best place to buy this track{% endif %}">✦ Find best source</button></form>
           {% endif %}
           {% if not confident_bp %}<a class="text-link bp" href="{{ beatport_search(t) }}" target="_blank" rel="noopener">Search Beatport ↗</a>{% endif %}
-          {% if agent_enabled and t.researched_at and t.id not in researching %}
-          <form method="post" action="{{ url_for('research_route') }}" class="inline"><button class="text-link" name="id" value="{{ t.id }}" title="Ask the agent to look again">↻ Research again</button></form>
-          {% endif %}
           <button type="button" class="more-btn" aria-expanded="false" aria-label="More actions for {{ t.title }}" onclick="toggleMore(this)">⋯</button>
         </div>
         <div class="more-list" hidden>

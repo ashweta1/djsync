@@ -702,7 +702,7 @@ def test_review_page_shows_agent_results(cfg):
     html = create_app(cfg).test_client().get("/").get_data(as_text=True)
     assert "Buy on Beatport" in html and BP in html and 'class="conf high"' in html
     assert "https://www.deezer.com/track/1" in html
-    assert "Find links (1)" in html  # Starry Night not researched yet
+    assert "Find best sources (1)" in html  # Starry Night not researched yet
 
 
 def test_approving_starts_research(cfg, monkeypatch):
@@ -1255,7 +1255,7 @@ def test_picker_on_the_board(cfg, monkeypatch):
 
 
 
-def test_research_again_is_visible_on_the_card_once(cfg):
+def test_find_best_source_is_first_on_the_card(cfg):
     from djsync.web import create_app
     st = State(path=cfg.state_path)
     st.tracks["1"] = Track(id="1", artist="Bicep", title="Glue", status=APPROVED)
@@ -1265,5 +1265,6 @@ def test_research_again_is_visible_on_the_card_once(cfg):
     html = create_app(cfg).test_client().get("/").get_data(as_text=True)
     card = html.split('class="card buy')[1].split("</article>")[0]
     foot = card.split('class="card-foot"')[1].split('class="more-list"')[0]
-    assert "Research again" in foot and card.count("Research again") == 1
+    assert foot.lstrip(">").strip().startswith("<form") and "Find best source" in foot.split("Search Beatport")[0]
+    assert card.count("Find best source") == 1 and "Research again" not in card
     assert 'class="store-link store-deezer"' in card
