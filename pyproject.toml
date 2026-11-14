@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "djsync"
+version = "0.1.0"
+description = "Find Spotify Liked Songs missing from your rekordbox library, buy them, and import them into a dated rekordbox playlist."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+    "spotipy>=2.24",
+    "pyrekordbox>=0.4",
+    "rapidfuzz>=3.0",
+    "mutagen>=1.47",
+    "flask>=3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+djsync = "djsync.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/djsync"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
