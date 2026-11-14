@@ -469,3 +469,97 @@ details.menu summary.btn::after { content: " ▾"; }
 .col-head.has-btn { grid-template-columns: auto 1fr auto auto; }
 .col-head.has-btn .col-sub { grid-column: 2 / 5; }
 .head-btn { grid-column: 4; grid-row: 1; margin: 0; }
+
+/* =====================================================================
+   Calmer pass: fewer loud buttons, clearer cards, store names as links
+   ===================================================================== */
+:root {
+  --bg: #0a0b0e;
+  --bg-2: #101216;            /* column background */
+  --panel: #1a1d23;           /* cards */
+  --line: #262a33;
+  --card-line: #2e333e;
+  --primary: #0f766e;         /* the few main actions */
+  --primary-hover: #0d9488;
+  --primary-ink: #ffffff;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #eceef2;
+    --bg-2: #e3e6eb;
+    --panel: #ffffff;
+    --card-line: #d3d8e0;
+    --primary: #0f766e;
+    --primary-hover: #115e59;
+    --primary-ink: #ffffff;
+  }
+}
+
+/* only Approve / Import are filled */
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); font-weight: 600; }
+.btn.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn { background: transparent; }
+.btn:hover { background: var(--panel-2); }
+
+/* step numbers: plain text, not button-like */
+.col-head .num {
+  background: none; color: var(--muted); width: auto; height: auto; border-radius: 0;
+  font: 600 13px/1 ui-monospace, Menlo, monospace; padding-right: 2px;
+}
+.col-head .num { grid-row: 1; align-self: baseline; font-size: 14px; }
+
+/* counts: quiet */
+.badge.hot { background: var(--accent-soft); color: var(--accent-2); }
+
+/* cards stand out from the column, with room between them */
+.col { background: var(--bg-2); }
+.col-body { gap: 12px; padding: 12px; }
+.card {
+  background: var(--panel); border: 1px solid var(--card-line); border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.card:hover { border-color: var(--muted); }
+@media (prefers-color-scheme: light) { .card { box-shadow: 0 1px 3px rgba(20, 22, 27, 0.08); } }
+
+/* "Beatport ↗ Jiya Jale (Extended Mix) - Whoja Vu  high" - the store name is the link */
+.pick-line { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; }
+.pick-line.busy { color: var(--muted); }
+.store-link {
+  flex: none; display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 650; color: var(--accent-2); text-decoration: none;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 6px; padding: 2px 8px;
+  background: var(--accent-soft);
+}
+.store-link:hover { background: color-mix(in srgb, var(--accent) 25%, transparent); text-decoration: none; }
+.store-link.unsure { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); border-style: dashed; }
+.pick-label { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conf { background: none; padding: 0; font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: 0; flex: none; }
+.conf.high { background: none; color: var(--accent-2); }
+.conf.medium { background: none; color: var(--warn); }
+.conf.low { background: none; color: var(--err); }
+
+/* footer row of a card: at most one visible extra, then ⋯ */
+.card-foot { display: flex; align-items: center; gap: 10px; padding-top: 8px; border-top: 1px solid var(--line); min-height: 30px; }
+.text-link, button.text-link {
+  font: inherit; font-size: 12.5px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px;
+  background: none; border: 0; padding: 0; cursor: pointer;
+}
+.text-link:hover, button.text-link:hover { color: var(--text); background: none; }
+.more-btn {
+  margin-left: auto; width: 30px; height: 26px; padding: 0; justify-content: center; border-radius: 7px;
+  border: 1px solid transparent; background: none; color: var(--muted); font-size: 16px; letter-spacing: 1px;
+}
+.more-btn:hover, .more-btn[aria-expanded="true"] { background: var(--panel-2); border-color: var(--line-2); color: var(--text); }
+.more-list { display: flex; flex-direction: column; margin: -2px -4px 0; padding: 4px; border-radius: 10px; background: var(--panel-2); }
+.more-list[hidden] { display: none; }
+.more-list form { margin: 0; }
+.more-list a, .more-list button {
+  display: block; width: 100%; text-align: left; font: inherit; font-size: 13px; color: var(--text);
+  background: none; border: 0; border-radius: 7px; padding: 6px 10px; text-decoration: none; cursor: pointer;
+}
+.more-list a:hover, .more-list button:hover { background: var(--panel); text-decoration: none; }
+.more-list .danger { color: var(--err); }
+
+/* import cards */
+.file-line { display: flex; flex-direction: column; gap: 2px; }
+.file-state { font-size: 11px; font-weight: 600; color: var(--accent-2); text-transform: uppercase; letter-spacing: 0.05em; }

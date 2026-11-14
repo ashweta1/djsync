@@ -968,7 +968,7 @@ def test_low_confidence_match_is_check_not_buy(cfg):
         store="beatport.com", store_name="Beatport", url=BP, label="Dance - Peggy Gou", confidence="low"))
     st.save()
     html = create_app(cfg).test_client().get("/?tab=buy").get_data(as_text=True)
-    assert "Check on Beatport" in html and "Buy on Beatport" not in html
+    assert 'class="store-link unsure"' in html and "Buy on Beatport" not in html
     assert "Search Beatport" in html
 
 
@@ -1141,3 +1141,22 @@ def test_beatport_test_command(monkeypatch, capsys):
     assert cli.main(["beatport-test", "Whoja", "Vu", "Jiya", "Jale"]) == 0
     out = capsys.readouterr().out
     assert "page data found: yes" in out and "2 track(s)" in out
+
+
+
+def test_buy_card_has_no_duplicate_links(cfg):
+    from djsync.web import create_app
+    st = State(path=cfg.state_path)
+    st.tracks["1"] = Track(id="1", artist="Bicep", title="Glue", status=APPROVED)
+    research.apply(st.tracks["1"], research.Finding(
+        store="beatport.com", store_name="Beatport", url=BP, label="Glue (Extended Mix) - Bicep",
+        confidence="high", deezer_url="https://www.deezer.com/track/1"))
+    st.save()
+    html = create_app(cfg).test_client().get("/").get_data(as_text=True)
+    card = html.split('class="card buy')[1].split("</article>")[0]
+    assert card.count(BP) == 1                                   # the store name is the link
+    foot = card.split('class="card-foot"')[1].split('class="more-list"')[0]
+    assert "Search Beatport" not in foot                         # confident Beatport pick: no extra search
+    assert card.count("beatport.com/search") == 1                # ...but still once in the ⋯ menu
+    assert card.count("Listen on Deezer") == 1 and card.count("Bandcamp") == 1
+    assert "btn primary" not in card                             # no loud buttons on cards
