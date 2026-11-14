@@ -35,6 +35,8 @@
   .links a, .chip { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--chip);
                     color: var(--text); text-decoration: none; white-space: nowrap; }
   .links a:hover { background: var(--accent); color: var(--accent-text); }
+  button.chip { border: 0; font-size: 12px; padding: 3px 8px; }
+  button.chip:hover { background: var(--accent); color: var(--accent-text); }
   .found { background: var(--accent); color: var(--accent-text); }
   button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--text);
            border-radius: 8px; padding: 7px 14px; cursor: pointer; }
@@ -91,9 +93,17 @@
   </form>
 
   <h2 id="approved">Approved, waiting for files <span class="n">{{ approved|length }}</span></h2>
-  <p class="muted">Buy each track from a store ({{ stores|join(', ') }}). djsync looks for the files in <code>{{ watch_dir }}</code>.</p>
+  <p class="muted">Buy each track from a store. djsync looks for the files in <code>{{ watch_dir }}</code>.</p>
   <div class="card">
     {% if approved %}
+    {% if found|length < approved|length %}
+    <form method="post" action="{{ url_for('open_searches') }}" class="bar">
+      {% set n = approved|length - found|length %}<span class="muted">Search {{ n }} missing track{{ "s" if n != 1 }}:</span>
+      {% for s in stores %}
+        <button type="submit" name="store" value="{{ s.key }}" {% if loop.first %}class="primary"{% endif %}>Open all on {{ s.name }}</button>
+      {% endfor %}
+    </form>
+    {% endif %}
     <div class="bar">
       <span class="muted">{{ found|length }} of {{ approved|length }} files found</span>
       <span class="spacer"></span>
@@ -110,6 +120,7 @@
           <span class="chip found" title="{{ found[t.id] }}">File found</span>
         {% else %}
           {% for l in store_links(t) %}<a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.name }}</a>{% endfor %}
+          <form method="post" action="{{ url_for('open_searches') }}" class="inline"><button class="chip" name="id" value="{{ t.id }}">All stores</button></form>
         {% endif %}
         <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}" class="inline"><button class="link">Skip</button></form>
       </div>

@@ -172,3 +172,52 @@ def test_review_page_renders(cfg):
     # approve with nothing ticked -> track 1 skipped
     client.post("/approve", data={})
     assert State.load(cfg.state_path).tracks["1"].status == SKIPPED
+
+
+# --- one-click searches ----------------------------------------------------------
+
+@pytest.mark.parametrize("artist,title,expected", [
+    ("Bicep, Hammer", "Glue (Original Mix)", "Bicep Glue"),
+    ("Bicep", "Glue - Extended Mix", "Bicep Glue"),
+    ("Peggy Gou", "Starry Night (feat. Someone)", "Peggy Gou Starry Night"),
+    ("Bicep", "Glue (Hammer Remix)", "Bicep Glue Hammer Remix"),
+])
+def test_search_query_cleanup(artist, title, expected):
+    assert stores.search_query(artist, title) == expected
+
+
+def test_open_all_on_store_skips_tracks_with_files(cfg, monkeypatch):
+    from djsync.web import create_app
+
+    opened = []
+    monkeypatch.setattr(stores.webbrowser, "open_new_tab", opened.append)
+    st = State(path=cfg.state_path)
+    st.tracks["1"] = Track(id="1", artist="Bicep", title="Glue", status=APPROVED)
+    st.tracks["2"] = Track(id="2", artist="Peggy Gou", title="Starry Night", status=APPROVED)
+    st.save()
+    (cfg.watch_dir / "Bicep - Glue.mp3").write_bytes(b"")  # already bought
+
+    client = create_app(cfg).test_client()
+    assert "Open all on Beatport" in client.get("/").get_data(as_text=True)
+    client.post("/open", data={"store": "beatport"})
+    assert opened == ["https://www.beatport.com/search/tracks?q=Peggy+Gou+Starry+Night"]
+
+
+def test_open_one_track_on_all_stores(cfg, monkeypatch):
+    from djsync.web import create_app
+
+    opened = []
+    monkeypatch.setattr(stores.webbrowser, "open_new_tab", opened.append)
+    st = State(path=cfg.state_path)
+    st.tracks["2"] = Track(id="2", artist="Peggy Gou", title="Starry Night", status=APPROVED)
+    st.save()
+    create_app(cfg).test_client().post("/open", data={"id": "2"})
+    assert [u.split("/")[2] for u in opened] == [
+        "www.beatport.com", "bandcamp.com", "www.traxsource.com", "www.junodownload.com"]
+
+
+def test_open_tabs_is_capped(monkeypatch):
+    opened = []
+    monkeypatch.setattr(stores.webbrowser, "open_new_tab", opened.append)
+    assert stores.open_tabs([f"u{i}" for i in range(50)]) == stores.MAX_TABS
+    assert len(opened) == stores.MAX_TABS

@@ -24,8 +24,13 @@ and djsync finds the files in your downloads folder and imports them.
 2. **Review**: opens a local web page listing the missing tracks, all ticked.
    Untick the ones you don't want and click **Approve**. Tracks you untick
    aren't suggested again, but you can restore them from the Skipped list.
-3. **Buy**: each approved track has search links for Beatport, Bandcamp,
-   Traxsource and Juno. Buy the track and let it download.
+3. **Buy**: each approved track has one-click search links for Beatport,
+   Bandcamp, Traxsource and Juno. **Open all on Beatport** opens a Beatport
+   search tab for every approved track that doesn't have a file yet (up to 30
+   at a time), and there's a button for each of the other stores too. **All
+   stores** on a track opens its search on every store. Search terms leave out
+   "(Original Mix)" and "feat." but keep remix names. Buy the track and let it
+   download.
 4. **Import**: djsync finds the purchased files in your downloads folder,
    unpacking zip files if needed, and matches them to approved tracks by tag
    or filename. It moves them into your music folder, adds them to rekordbox

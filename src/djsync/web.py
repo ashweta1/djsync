@@ -39,7 +39,8 @@ def create_app(cfg: Config) -> Flask:
             found=found,
             last_scan=st.last_scan,
             watch_dir=cfg.watch_dir,
-            stores=[stores.STORES[s][0] for s in cfg.stores if s in stores.STORES],
+            stores=[{"key": s, "name": stores.STORES[s][0]}
+                    for s in cfg.stores if s in stores.STORES],
         )
 
     @app.post("/scan")
@@ -65,6 +66,31 @@ def create_app(cfg: Config) -> Flask:
             st.save()
             flash(f"Approved {len(chosen & set(pending))} tracks. Buy them from the links below; "
                   f"they'll be picked up from {cfg.watch_dir}.", "ok")
+        return redirect(url_for("index") + "#approved")
+
+    @app.post("/open")
+    def open_searches():
+        """Open store searches as browser tabs.
+
+        store=<key> + no id: that store, for every approved track without a file yet.
+        id=<track id> + no store: that track, on every enabled store.
+        """
+        st = state()
+        store, track_id = request.form.get("store"), request.form.get("id")
+        if track_id:
+            t = st.tracks.get(track_id)
+            if not t:
+                return "unknown track", 404
+            urls = [l["url"] for l in stores.links(t.artist, t.title, cfg.stores)]
+        elif store in stores.STORES:
+            matched, waiting = core.match_files(cfg, st)
+            urls = [stores.url(store, t.artist, t.title) for t in waiting]
+        else:
+            return "need store or id", 400
+        n = stores.open_tabs(urls)
+        if len(urls) > n:
+            flash(f"Opened the first {n} of {len(urls)} searches. Click again after "
+                  "you've bought these to open the next ones.", "ok")
         return redirect(url_for("index") + "#approved")
 
     @app.post("/move/<track_id>/<status>")
