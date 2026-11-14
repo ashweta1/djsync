@@ -9,7 +9,7 @@
 <body>
 
 <header class="top">
-  <div class="wrap top-row">
+  <div class="wrap {% block top_class %}{% endblock %} top-row">
     <a class="brand" href="{{ url_for('index') }}" aria-label="djsync home">
       <svg viewBox="0 0 28 20" width="28" height="20" aria-hidden="true">
         <rect x="0" y="7" width="3" height="6" rx="1.5"/><rect x="5" y="3" width="3" height="14" rx="1.5"/>
@@ -23,7 +23,7 @@
   {% block nav %}{% endblock %}
 </header>
 
-<main class="wrap">
+<main class="wrap {% block main_class %}{% endblock %}">
   {% block content %}{% endblock %}
 </main>
 

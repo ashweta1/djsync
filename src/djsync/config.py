@@ -22,6 +22,11 @@ redirect_uri = "http://127.0.0.1:8888/callback"
 [paths]
 # Folder your store purchases download into. djsync scans it for approved tracks.
 watch_dir = "~/Downloads"
+# Other folders to look in for purchased tracks (e.g. iTunes/Apple Music purchases
+# land in ~/Music). Only files from the last `recent_days` days are considered, and
+# they're copied into your DJ folder on import, never moved.
+extra_dirs = ["~/Music"]
+recent_days = 90
 # Where imported tracks are moved to (your DJ music folder).
 library_dir = "~/Music/DJ"
 # true = move files out of watch_dir, false = copy them.
@@ -80,6 +85,8 @@ class Config:
     watch_dir: Path = Path("~/Downloads").expanduser()
     library_dir: Path = Path("~/Music/DJ").expanduser()
     move_files: bool = True
+    extra_dirs: list[Path] = field(default_factory=lambda: [Path("~/Music").expanduser()])
+    recent_days: int = 90
     rekordbox_mode: str = "auto"
     rekordbox_db_path: str = ""
     playlist_prefix: str = "djsync-downloads-"
@@ -97,6 +104,15 @@ class Config:
     claude_code_model: str = "sonnet"
     claude_path: str = ""
     home: Path = HOME
+
+    @property
+    def search_dirs(self) -> list[Path]:
+        """Downloads first, then the extra folders (no duplicates)."""
+        out = []
+        for d in [self.watch_dir, *self.extra_dirs]:
+            if d not in out:
+                out.append(d)
+        return out
 
     @property
     def state_path(self) -> Path:
@@ -133,6 +149,8 @@ def load(path: Path = CONFIG_PATH) -> Config:
     cfg.watch_dir = Path(paths.get("watch_dir", "~/Downloads")).expanduser()
     cfg.library_dir = Path(paths.get("library_dir", "~/Music/DJ")).expanduser()
     cfg.move_files = bool(paths.get("move_files", True))
+    cfg.extra_dirs = [Path(d).expanduser() for d in paths.get("extra_dirs", ["~/Music"])]
+    cfg.recent_days = int(paths.get("recent_days", 90))
     cfg.rekordbox_mode = rb.get("mode", "auto")
     if cfg.rekordbox_mode not in ("auto", "db", "xml"):
         raise ValueError("[rekordbox] mode must be auto, db or xml")

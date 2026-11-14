@@ -94,11 +94,24 @@ def create_app(cfg: Config) -> Flask:
                 return f"{v}{unit} ago" if unit != "d" or v < 30 else dt.strftime("%-d %b %Y")
         return "just now"
 
-    def back(tab: str | None = None):
-        """Redirect to a tab: the one given, else the tab the request came from."""
-        if tab is None and request.referrer:
-            tab = parse_qs(urlparse(request.referrer).query).get("tab", [None])[0]
-        return redirect(url_for("index", tab=tab) if tab else url_for("index"))
+    def where() -> str:
+        """'~/Downloads and ~/Music' for messages."""
+        names = [tilde(d) for d in cfg.search_dirs]
+        return " and ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else names[0]
+
+    def back(hl=None):
+        """Back to the board (or the archive, if that's where you were).
+
+        ``hl`` is track ids to highlight, so you can see where a card moved to.
+        """
+        args = {}
+        if request.referrer:
+            view = parse_qs(urlparse(request.referrer).query).get("view", [None])[0]
+            if view == "archive":
+                args["view"] = view
+        if hl:
+            args["hl"] = ",".join(hl)
+        return redirect(url_for("index", **args))
 
     @app.template_filter("tilde")
     def tilde(path) -> str:
@@ -130,17 +143,10 @@ def create_app(cfg: Config) -> Flask:
         ready = [t for t in approved if t.id in found]
         to_buy = [t for t in approved if t.id not in found]
         skipped, in_rb = st.by_status(SKIPPED), st.by_status(IN_REKORDBOX)
-        tabs = [("review", "Review", len(pending)), ("buy", "To buy", len(to_buy)),
-                ("ready", "Ready to import", len(ready)), ("imported", "Imported", len(playlists)),
-                ("archive", "Archive", len(skipped) + len(in_rb))]
-        tab = request.args.get("tab")
-        if tab not in {k for k, _, _ in tabs}:
-            # Open on the first step that needs you.
-            tab = next((k for k, _, n in tabs[:3] if n), "imported" if playlists else "review")
         return render_template(
             "review.html",
-            tab=tab,
-            tabs=tabs,
+            view="archive" if request.args.get("view") == "archive" else "board",
+            hl=set(filter(None, request.args.get("hl", "").split(","))),
             pending=pending,
             approved=approved,
             to_buy=to_buy,
@@ -153,6 +159,7 @@ def create_app(cfg: Config) -> Flask:
             today_playlist=f"{cfg.playlist_prefix}{date.today():%Y-%m-%d}",
             last_scan=st.last_scan,
             watch_dir=cfg.watch_dir,
+            search_dirs=cfg.search_dirs,
             stores=[{"key": s, "name": stores.STORES[s][0]}
                     for s in cfg.stores if s in stores.STORES],
         )
@@ -171,7 +178,7 @@ def create_app(cfg: Config) -> Flask:
                 flash(msg, "ok")
             except Exception as e:
                 flash(f"Scan failed: {e}", "err")
-        return back("review")
+        return back()
 
     @app.post("/approve")
     def approve():
@@ -179,8 +186,15 @@ def create_app(cfg: Config) -> Flask:
             st = state()
             chosen = set(request.form.getlist("id"))
             pending = [t.id for t in st.by_status(PENDING)]
+            if request.form.get("action") == "skip_rest":
+                # "Skip unselected": the unticked cards leave Scan; ticked ones stay.
+                rest = [i for i in pending if i not in chosen]
+                st.set_status(rest, SKIPPED)
+                st.save()
+                flash(f"Skipped {len(rest)} track{'s' if len(rest) != 1 else ''}. "
+                      "They're in the Archive if you change your mind.", "ok")
+                return back()
             st.set_status([i for i in pending if i in chosen], APPROVED)
-            st.set_status([i for i in pending if i not in chosen], SKIPPED)
             st.save()
         approved_now = [i for i in pending if i in chosen]
         if cfg.agent_enabled and cfg.agent_auto and approved_now:
@@ -188,8 +202,8 @@ def create_app(cfg: Config) -> Flask:
         msg = f"Approved {len(approved_now)} tracks."
         if cfg.agent_enabled and cfg.agent_auto and approved_now:
             msg += " The agent is finding the best place to buy each one."
-        flash(msg + f" Purchased files are picked up from {cfg.watch_dir}.", "ok")
-        return back("buy")
+        flash(msg + f" Purchased files are picked up from {where()}.", "ok")
+        return back(approved_now)
 
     @app.post("/open")
     def open_searches():
@@ -232,7 +246,7 @@ def create_app(cfg: Config) -> Flask:
         st = state()
         n = len(core._scan_downloads(cfg))
         matched, waiting = core.match_files(cfg, st)
-        flash(f"Scanned {cfg.watch_dir} and its subfolders: {n} audio files, "
+        flash(f"Scanned {where()} (with subfolders): {n} audio files, "
               f"{len(matched)} matched, {len(waiting)} still missing.", "ok")
         return back()
 
@@ -244,7 +258,8 @@ def create_app(cfg: Config) -> Flask:
             return "unknown track", 404
         return render_template(
             "attach.html", t=t, candidates=core.candidates(cfg, t),
-            threshold=cfg.file_threshold, watch_dir=cfg.watch_dir,
+            threshold=cfg.file_threshold, watch_dir=cfg.watch_dir, search_dirs=cfg.search_dirs,
+            recent_days=cfg.recent_days,
             can_browse=sys.platform == "darwin",
         )
 
@@ -262,7 +277,7 @@ def create_app(cfg: Config) -> Flask:
                 t.status = APPROVED
             st.save()
         flash(f"Attached {path.name} to {t.artist} - {t.title}.", "ok")
-        return back("ready")
+        return back([track_id])
 
     @app.post("/attach/<track_id>")
     def attach(track_id: str):
@@ -318,7 +333,9 @@ def create_app(cfg: Config) -> Flask:
             if status != APPROVED and track_id in st.tracks:
                 st.tracks[track_id].file = ""
             st.save()
-        return back()
+        if status == APPROVED and cfg.agent_enabled and cfg.agent_auto:
+            start_research([track_id])
+        return back([track_id])
 
     @app.post("/import")
     def do_import():
@@ -333,8 +350,8 @@ def create_app(cfg: Config) -> Flask:
             flash(f"Saved {len(r.matched)} tracks to an XML file for playlist '{r.playlist}'. "
                   "They're not in rekordbox yet; see the steps under 'Imported'.", "ok")
         elif not r.matched:
-            flash(f"No approved tracks found in {cfg.watch_dir} yet.", "err")
-        return back("imported")
+            flash(f"No approved tracks found in {where()} yet.", "err")
+        return back()
 
     @app.post("/retry-db")
     def retry_db():

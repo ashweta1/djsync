@@ -63,7 +63,23 @@ class ImportResult:
 
 def _scan_downloads(cfg: Config) -> list[filemod.AudioFile]:
     # Don't look inside the DJ library folder if it happens to sit under Downloads.
-    return filemod.scan(cfg.watch_dir, exclude=[cfg.library_dir])
+    import time
+
+    found, seen = [], set()
+    for d in cfg.search_dirs:
+        is_downloads = d == cfg.watch_dir
+        # Skip the DJ folder (already imported) and, when walking ~/Music, Downloads too.
+        exclude = [cfg.library_dir] + [x for x in cfg.search_dirs if x != d]
+        files = filemod.scan(
+            d, exclude=exclude, unpack=is_downloads,
+            newer_than=None if is_downloads else time.time() - cfg.recent_days * 86400,
+        )
+        for f in files:
+            key = f.path.resolve()
+            if key not in seen:
+                seen.add(key)
+                found.append(f)
+    return found
 
 
 def score(t: Track, f: filemod.AudioFile) -> int:
@@ -103,7 +119,8 @@ def match_files(cfg: Config, st: State) -> tuple[list[tuple[Track, Path]], list[
             sc = score(t, f)
             if sc >= cfg.file_threshold:
                 pairs.append((sc, ti, fi))
-    pairs.sort(reverse=True)
+    # Best score first; on a tie, the earlier file (Downloads before ~/Music, newest first).
+    pairs.sort(key=lambda p: (-p[0], p[2], p[1]))
     got_t, got_f = {}, set()
     for sc, ti, fi in pairs:
         if ti not in got_t and fi not in got_f:

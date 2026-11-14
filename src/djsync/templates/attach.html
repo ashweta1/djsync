@@ -26,8 +26,8 @@
   <p class="muted small">Tip: in Finder, select the file and press ⌥⌘C (Option-Command-C) to copy its path.</p>
 </div>
 
-<h2 class="sub-h">Files in Downloads <span class="muted">{{ candidates|length }}</span></h2>
-<p class="muted small">All audio files in <code>{{ watch_dir|tilde }}</code> and its subfolders, best match first. A score of {{ threshold }}% or more is matched automatically.</p>
+<h2 class="sub-h">Files found <span class="muted">{{ candidates|length }}</span></h2>
+<p class="muted small">Audio files in <code>{{ watch_dir|tilde }}</code>{% for d in search_dirs[1:] %} and files from the last {{ recent_days }} days in <code>{{ d|tilde }}</code>{% endfor %}, with subfolders, best match first. A score of {{ threshold }}% or more is matched automatically.</p>
 {% if candidates %}
 <div class="toolbar"><input class="search" type="search" placeholder="Filter by name…" oninput="filter(this.value)" aria-label="Filter files"></div>
 <div class="list compact">
@@ -45,7 +45,7 @@
 </div>
 {% else %}
 <div class="empty small-empty">
-  <p class="muted">No audio files found in {{ watch_dir|tilde }}. Use “Choose in Finder…” to pick one from anywhere.</p>
+  <p class="muted">No audio files found. Use “Choose in Finder…” to pick one from anywhere.</p>
 </div>
 {% endif %}
 {% endblock %}

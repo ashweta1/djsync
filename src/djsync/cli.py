@@ -99,7 +99,8 @@ def cmd_import(cfg, args) -> int:
             print(f"Wrote {r.xml_path} (playlist '{r.playlist}'). Import it in rekordbox via "
                   "Preferences > Advanced > Database > rekordbox xml.")
         if r.waiting:
-            print(f"{len(r.waiting)} approved tracks not found yet in {cfg.watch_dir}.")
+            dirs = ", ".join(str(d) for d in cfg.search_dirs)
+            print(f"{len(r.waiting)} approved tracks not found yet in {dirs}.")
         if not args.watch or not State.load(cfg.state_path).by_status(APPROVED):
             return 1 if r.error and not r.method else 0
         time.sleep(args.interval)

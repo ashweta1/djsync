@@ -102,26 +102,36 @@ def unpack_archives(folder: Path) -> None:
             continue
 
 
-def scan(folder: Path, recursive: bool = True, exclude: list[Path] = ()) -> list[AudioFile]:
+def scan(folder: Path, recursive: bool = True, exclude: list[Path] = (),
+         newer_than: float | None = None, unpack: bool = True) -> list[AudioFile]:
     """All audio files in ``folder`` and (by default) every subfolder, newest first.
 
-    Hidden folders (".something") and anything under ``exclude`` are skipped.
+    Hidden folders (".something") and anything under ``exclude`` are skipped without
+    being walked. ``newer_than`` (a timestamp) keeps only recently changed files, which
+    keeps big folders like ~/Music fast. ``unpack`` extracts store .zip downloads.
     """
+    import os
+
     if not folder.exists():
         return []
-    unpack_archives(folder)
-    excluded = [e.resolve() for e in exclude if e.exists()]
-    it = folder.rglob("*") if recursive else folder.glob("*")
+    if unpack:
+        unpack_archives(folder)
+    excluded = {e.resolve() for e in exclude if e.exists()}
     out = []
-    for p in it:
-        rel = p.relative_to(folder).parts
-        if any(part.startswith(".") for part in rel[:-1]):
-            continue
-        if not is_audio(p):
-            continue
-        rp = p.resolve()
-        if any(e == rp or e in rp.parents for e in excluded):
-            continue
-        out.append(describe(p))
-    out.sort(key=lambda f: f.path.stat().st_mtime, reverse=True)
-    return out
+    for root, dirs, names in os.walk(folder):
+        here = Path(root)
+        dirs[:] = [d for d in dirs if not d.startswith(".")
+                   and (here / d).resolve() not in excluded] if recursive else []
+        for name in names:
+            p = here / name
+            if name.startswith(".") or p.suffix.lower() not in AUDIO_EXTS:
+                continue
+            try:
+                mtime = p.stat().st_mtime
+            except OSError:
+                continue
+            if newer_than is not None and mtime < newer_than:
+                continue
+            out.append((mtime, p))
+    out.sort(key=lambda x: x[0], reverse=True)
+    return [describe(p) for _, p in out]

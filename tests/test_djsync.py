@@ -96,7 +96,8 @@ class FakeSpotify:
 @pytest.fixture
 def cfg(tmp_path):
     c = Config(home=tmp_path / "home", watch_dir=tmp_path / "dl",
-               library_dir=tmp_path / "lib", rekordbox_mode="xml")
+               library_dir=tmp_path / "lib", rekordbox_mode="xml",
+               extra_dirs=[tmp_path / "music"])
     c.watch_dir.mkdir()
     return c
 
@@ -166,13 +167,13 @@ def test_review_page_renders(cfg):
     st.tracks["2"] = Track(id="2", artist="Peggy Gou", title="Starry Night", status=APPROVED)
     st.save()
     client = create_app(cfg).test_client()
-    html = client.get("/").get_data(as_text=True)  # opens on Review: something to review
-    assert 'aria-current="page"' in html and "New on Spotify" in html and "Glue" in html
-    buy = client.get("/?tab=buy").get_data(as_text=True)
-    assert "Starry Night" in buy and "beatport.com" in buy
+    html = client.get("/").get_data(as_text=True)  # one board, all four columns
+    for col in ("Scan", "Buy", "Import", "Playlists"):
+        assert f">{col}</h2>" in html
+    assert "Glue" in html and "Starry Night" in html and "beatport.com" in html
 
-    # approve with nothing ticked -> track 1 skipped
-    client.post("/approve", data={})
+    # "Skip unselected" with nothing ticked -> track 1 skipped
+    client.post("/approve", data={"action": "skip_rest"})
     assert State.load(cfg.state_path).tracks["1"].status == SKIPPED
 
 
@@ -696,9 +697,9 @@ def test_review_page_shows_agent_results(cfg):
     st.tracks["2"] = Track(id="2", artist="Peggy Gou", title="Starry Night", status=APPROVED)
     st.save()
     html = create_app(cfg).test_client().get("/").get_data(as_text=True)
-    assert "Buy on Beatport" in html and BP in html and "high match" in html
-    assert "Listen on Deezer" in html
-    assert "Find best links for 1 track" in html  # Starry Night not researched yet
+    assert "Buy on Beatport" in html and BP in html and 'class="conf high"' in html
+    assert "https://www.deezer.com/track/1" in html
+    assert "Find links (1)" in html  # Starry Night not researched yet
 
 
 def test_approving_starts_research(cfg, monkeypatch):
@@ -717,21 +718,51 @@ def test_approving_starts_research(cfg, monkeypatch):
     assert seen == ["1"]
 
 
-def test_tabs_pick_first_step_that_needs_you_and_keep_tab_on_redirect(cfg):
+def test_board_columns_and_moving_cards(cfg, monkeypatch):
     from djsync.web import create_app
-    _approved(cfg, ("Bicep", "Glue"), ("Peggy Gou", "Starry Night"))
-    (cfg.watch_dir / "Bicep - Glue.mp3").write_bytes(b"")
+    started = []
+    monkeypatch.setattr(research, "research_many", lambda c, tracks, on_done=None: started.extend(t.id for t in tracks))
+    st = State(path=cfg.state_path)
+    for i, (a, t) in enumerate([("Bicep", "Glue"), ("Peggy Gou", "Starry Night"), ("Overmono", "So U Kno")]):
+        st.tracks[str(i)] = Track(id=str(i), artist=a, title=t, status=PENDING)
+    st.save()
     client = create_app(cfg).test_client()
+
+    # approve only the ticked card; unticked ones stay in Scan
+    r = client.post("/approve", data={"id": ["0"], "action": "approve"})
+    assert r.headers["Location"].endswith("/?hl=0")
+    st = State.load(cfg.state_path)
+    assert [st.tracks[i].status for i in "012"] == [APPROVED, PENDING, PENDING]
+
+    # quick approve (✓) on a single card also starts research
+    r = client.post("/move/1/approved")
+    assert r.headers["Location"].endswith("/?hl=1")
+    import time
+    for _ in range(50):
+        if "1" in started:
+            break
+        time.sleep(0.02)
+    assert "1" in started
+
+    # once the file lands, the card is in the Import column with an Import button
+    (cfg.watch_dir / "Bicep - Glue.mp3").write_bytes(b"")
+    html = client.get("/?hl=0").get_data(as_text=True)
+    imp = html.split('id="c-import"')[1].split('id="c-pl"')[0]
+    assert "Glue" in imp and "Import 1 into rekordbox" in imp and 'class="card ready arrive' in imp
+    buy = html.split('id="c-buy"')[1].split('id="c-import"')[0]
+    assert "Starry Night" in buy and "Glue" not in buy
+
+    # after import it's listed under its playlist in column 4
+    client.post("/import")
     html = client.get("/").get_data(as_text=True)
-    assert "<h1>To buy</h1>" in html            # nothing to review, so To buy
-    assert "Starry Night" in html and "Glue" not in html.split("<main")[1]
-    ready = client.get("/?tab=ready").get_data(as_text=True)
-    assert "Import 1 into rekordbox" in ready and "djsync-downloads-" in ready
-    # redirects go back to the tab you were on
-    r = client.post("/rescan-downloads", headers={"Referer": "http://localhost/?tab=ready"})
-    assert r.headers["Location"].endswith("/?tab=ready")
-    r = client.post("/import")
-    assert r.headers["Location"].endswith("/?tab=imported")
+    pl = html.split('id="c-pl"')[1]
+    assert "djsync-downloads-" in pl and "Glue" in pl
+
+    # skip from the archive view goes back to the archive
+    client.post("/move/2/skipped")
+    r = client.post("/move/2/pending", headers={"Referer": "http://localhost/?view=archive"})
+    assert "view=archive" in r.headers["Location"]
+    assert "Archive" in client.get("/?view=archive").get_data(as_text=True)
 
 
 def test_ago_and_hue_filters():
@@ -943,3 +974,62 @@ def test_beatport_language_versions_are_the_same_page():
     f = research.research(Config(), GLUE, client, opener=_no_deezer)
     assert f.url == "https://www.beatport.com/track/glue/20817455"
     assert research._norm_url("https://www.beatport.com/fr/release/x/1") == "https://www.beatport.com/release/x/1"
+
+
+
+# --- also look in ~/Music ---------------------------------------------------------------
+
+def test_music_folder_recent_files_found_and_copied_not_moved(cfg):
+    import os, time
+    music = cfg.extra_dirs[0]
+    (music / "Music" / "Media" / "Bicep" / "Isles").mkdir(parents=True)
+    bought = music / "Music" / "Media" / "Bicep" / "Isles" / "03 Glue.m4a"
+    bought.write_bytes(b"")
+    old = music / "Old Stuff" / "Peggy Gou - Starry Night.mp3"
+    old.parent.mkdir()
+    old.write_bytes(b"")
+    long_ago = time.time() - 400 * 86400
+    os.utime(old, (long_ago, long_ago))          # older than recent_days: ignored
+    hidden = music / ".Trash" / "Bicep - Glue.mp3"
+    hidden.parent.mkdir()
+    hidden.write_bytes(b"")
+
+    _approved(cfg, ("Bicep", "Glue"), ("Peggy Gou", "Starry Night"))
+    matched, waiting = core.match_files(cfg, State.load(cfg.state_path))
+    assert [(t.title, p) for t, p in matched] == [("Glue", bought)]
+    assert [t.title for t in waiting] == ["Starry Night"]
+
+    res = core.do_import(cfg, State.load(cfg.state_path))
+    assert res.method == "xml"
+    assert bought.exists()                       # Apple Music library left intact
+    assert (cfg.library_dir / "03 Glue.m4a").exists()
+
+
+def test_dj_folder_inside_music_is_not_scanned(cfg):
+    cfg.library_dir = cfg.extra_dirs[0] / "DJ"
+    cfg.library_dir.mkdir(parents=True)
+    (cfg.library_dir / "Bicep - Glue.mp3").write_bytes(b"")   # already imported
+    _approved(cfg, ("Bicep", "Glue"))
+    matched, _ = core.match_files(cfg, State.load(cfg.state_path))
+    assert matched == []
+
+
+def test_downloads_files_still_moved_and_preferred(cfg):
+    music = cfg.extra_dirs[0]
+    music.mkdir()
+    (music / "Bicep - Glue.mp3").write_bytes(b"")
+    dl = cfg.watch_dir / "Bicep - Glue.mp3"
+    dl.write_bytes(b"")
+    _approved(cfg, ("Bicep", "Glue"))
+    core.do_import(cfg, State.load(cfg.state_path))
+    assert (music / "Bicep - Glue.mp3").exists()
+    assert not dl.exists() and (cfg.library_dir / "Bicep - Glue.mp3").exists()
+
+
+def test_extra_dirs_config(tmp_path):
+    from djsync import config as cfgmod
+    p = tmp_path / "config.toml"
+    p.write_text('[paths]\nwatch_dir = "/dl"\nextra_dirs = ["/a", "/dl"]\nrecent_days = 7\n')
+    c = cfgmod.load(p)
+    assert c.search_dirs == [Path("/dl"), Path("/a")] and c.recent_days == 7
+    assert Config().extra_dirs == [Path("~/Music").expanduser()]

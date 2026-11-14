@@ -14,6 +14,19 @@ Spotify Liked Songs ──► compare with rekordbox ──► review page (unti
 djsync doesn't download from streaming services. You buy the tracks yourself,
 and djsync finds the files in your downloads folder and imports them.
 
+## The board
+
+`djsync review` opens a board with four columns. Each track is a card that
+moves from left to right:
+
+| 1. Scan | 2. Buy | 3. Import | 4. Playlists |
+|---|---|---|---|
+| New Spotify likes that aren't in rekordbox. **✓** approves a card and **✕** skips it. You can also tick several, then **Approve selected** or **Skip unselected**. | Approved tracks, each with the best place to buy it. | Tracks whose file has turned up in Downloads or Music. **Import** adds them to rekordbox. | Each day's `djsync-downloads-<date>` playlist and its tracks. |
+
+A card that just moved is highlighted in its new column. Skipped tracks, and
+ones that reached rekordbox some other way, are under **Archive** in the
+header. On a phone, swipe between the columns.
+
 ## What it does
 
 1. **Scan**: reads your Liked Songs through the official Spotify API, using
@@ -52,7 +65,10 @@ and djsync finds the files in your downloads folder and imports them.
    are still there too.
 
 4. **Find the files**: djsync looks in your downloads folder **and all its
-   subfolders**, including unpacked zip files. Hidden folders and your DJ
+   subfolders**. It also checks files added to **~/Music** in the last 90 days,
+   which is where iTunes/Apple Music purchases land. Files from Music are
+   *copied* into your DJ folder, never moved, so your Apple Music library stays
+   as it is, including unpacked zip files. Hidden folders and your DJ
    library folder are skipped. It matches files by their tags and by filename,
    so names like `bicep_glue_320.mp3`, `Glue [Bicep] 24bit.wav` or
    `03 So U Kno.flac` inside an artist folder are still found. A different
@@ -180,7 +196,9 @@ write. If anything goes wrong, quit rekordbox and copy a backup back to
 
 ```toml
 [paths]
-watch_dir = "~/Downloads"    # where store purchases land
+watch_dir = "~/Downloads"    # where store purchases land (moved on import)
+extra_dirs = ["~/Music"]     # also look here, recent files only (copied on import)
+recent_days = 90             # how far back to look in extra_dirs
 library_dir = "~/Music/DJ"   # where imported tracks are moved
 move_files = true            # false = copy instead of move
 

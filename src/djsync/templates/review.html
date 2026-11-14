@@ -1,348 +1,345 @@
 {% extends "base.html" %}
 {% from "macros.html" import art %}
 
-{% block header_actions %}
-<form method="post" action="{{ url_for('scan') }}" class="top-actions">
-  <span class="muted small">{% if last_scan %}Scanned {{ last_scan|ago }}{% else %}Not scanned yet{% endif %}</span>
-  <button class="btn" type="submit">
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.6 2.4v3.8H9.8M2.4 13.6V9.8h3.8M3.1 6.1a5.2 5.2 0 0 1 9.3-1.4l1.2 1.5M12.9 9.9a5.2 5.2 0 0 1-9.3 1.4l-1.2-1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    Scan Spotify
-  </button>
-</form>
-{% endblock %}
+{% block main_class %}{% if view == "board" %}wide board-main{% endif %}{% endblock %}
+{% block top_class %}{% if view == "board" %}wide{% endif %}{% endblock %}
 
-{% block nav %}
-<nav class="tabs" aria-label="Sections">
-  <div class="wrap tabs-row">
-    {% for key, label, n in tabs %}
-    <a href="{{ url_for('index', tab=key) }}" class="tab {% if key == tab %}on{% endif %} {% if key == 'archive' %}end{% endif %}"
-       {% if key == tab %}aria-current="page"{% endif %}>
-      <span>{{ label }}</span>{% if n %}<b class="badge {% if key in ('review', 'ready') %}hot{% endif %}">{{ n }}</b>{% endif %}
-    </a>
-    {% if loop.index < 4 %}<span class="step" aria-hidden="true">›</span>{% endif %}
-    {% endfor %}
-  </div>
-</nav>
+{% block header_actions %}
+<div class="top-actions">
+  <a class="toplink {% if view == 'archive' %}on{% endif %}" href="{{ url_for('index', view='archive') if view != 'archive' else url_for('index') }}">
+    {% if view == 'archive' %}← Board{% else %}Archive{% if skipped or in_rekordbox %} <b class="badge">{{ skipped|length + in_rekordbox|length }}</b>{% endif %}{% endif %}
+  </a>
+  <form method="post" action="{{ url_for('scan') }}" class="inline">
+    <span class="muted small hide-sm">{% if last_scan %}Scanned {{ last_scan|ago }}{% else %}Not scanned yet{% endif %}</span>
+    <button class="btn" type="submit">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M13.6 2.4v3.8H9.8M2.4 13.6V9.8h3.8M3.1 6.1a5.2 5.2 0 0 1 9.3-1.4l1.2 1.5M12.9 9.9a5.2 5.2 0 0 1-9.3 1.4l-1.2-1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Scan Spotify
+    </button>
+  </form>
+</div>
 {% endblock %}
 
 {% block content %}
+{% if view == "board" %}
+<div class="board">
 
-{# ------------------------------------------------------------------ Review #}
-{% if tab == "review" %}
-<section class="head">
-  <div>
-    <h1>New on Spotify</h1>
-    <p class="muted">Liked songs that aren't in your rekordbox library. Untick what you don't want; unticked tracks won't be suggested again.</p>
-  </div>
-</section>
-{% if pending %}
-<form method="post" action="{{ url_for('approve') }}" id="approve">
-  <div class="toolbar">
-    <input class="search" type="search" placeholder="Filter by artist or title" aria-label="Filter" oninput="filterCards(this.value)">
-    <button type="button" class="btn ghost" onclick="toggleAll(true)">Select all</button>
-    <button type="button" class="btn ghost" onclick="toggleAll(false)">Select none</button>
-  </div>
-  <div class="grid">
-    {% for t in pending %}
-    <label class="tcard" data-text="{{ (t.artist ~ ' ' ~ t.title ~ ' ' ~ t.album)|lower }}">
-      <input type="checkbox" name="id" value="{{ t.id }}" checked onchange="count()">
-      <div class="cover">
-        {{ art(t, 160) }}
-        <span class="tick" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+  {# ============================================================ 1. Scan #}
+  <section class="col" aria-labelledby="c-scan">
+    <header class="col-head">
+      <span class="num">1</span>
+      <h2 id="c-scan">Scan</h2>
+      <b class="badge {% if pending %}hot{% endif %}">{{ pending|length }}</b>
+      <span class="col-sub">New likes, not in rekordbox</span>
+    </header>
+    {% if pending %}
+    <form method="post" action="{{ url_for('approve') }}" id="approve" class="col-form">
+      <div class="col-tools">
+        <input class="search sm" type="search" placeholder="Filter" aria-label="Filter new tracks" oninput="filterCards(this.value)">
+        <button type="button" class="btn ghost sm" onclick="toggleAll(true)" title="Select all">All</button>
+        <button type="button" class="btn ghost sm" onclick="toggleAll(false)" title="Select none">None</button>
       </div>
-      <div class="tinfo">
-        <div class="t" title="{{ t.title }}">{{ t.title }}</div>
-        <div class="a" title="{{ t.artist }}">{{ t.artist }}</div>
-        <div class="m">
-          {% if t.added_at %}<span>Liked {{ t.added_at|ago }}</span>{% endif %}
-          {% if t.spotify_url %}<a href="{{ t.spotify_url }}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Play ↗</a>{% endif %}
+      <div class="col-body">
+        {% for t in pending %}
+        <div class="card scan {% if t.id in hl %}arrive{% endif %}" data-text="{{ (t.artist ~ ' ' ~ t.title ~ ' ' ~ t.album)|lower }}">
+          <label class="pick" title="Select">
+            <input type="checkbox" name="id" value="{{ t.id }}" onchange="count()">
+            <span class="box" aria-hidden="true"></span>
+          </label>
+          {{ art(t, 44) }}
+          <div class="main">
+            <div class="t" title="{{ t.title }}">{{ t.title }}</div>
+            <div class="a" title="{{ t.artist }}">{{ t.artist }}</div>
+            <div class="m">{% if t.added_at %}Liked {{ t.added_at|ago }}{% endif %}{% if t.spotify_url %} · <a href="{{ t.spotify_url }}" target="_blank" rel="noopener">Play ↗</a>{% endif %}</div>
+          </div>
+          <div class="quick">
+            <button class="ic ok" formaction="{{ url_for('move', track_id=t.id, status='approved') }}" title="Approve: move to Buy" aria-label="Approve {{ t.title }}">✓</button>
+            <button class="ic no" formaction="{{ url_for('move', track_id=t.id, status='skipped') }}" title="Skip: move to Archive" aria-label="Skip {{ t.title }}">✕</button>
+          </div>
         </div>
+        {% endfor %}
       </div>
-    </label>
+      <footer class="col-foot">
+        <span id="count" class="muted small"></span>
+        <div class="foot-btns">
+          <button class="btn ghost sm" type="submit" name="action" value="skip_rest" title="Move every unticked card to the Archive">Skip unselected</button>
+          <button class="btn primary" type="submit" name="action" value="approve" id="approve-btn">Approve selected →</button>
+        </div>
+      </footer>
+    </form>
+    {% else %}
+    <div class="col-body"><div class="col-empty">
+      <div class="empty-art" aria-hidden="true">♪</div>
+      <p>All caught up.</p>
+      <p class="muted small">Like songs on Spotify, then <b>Scan Spotify</b>.</p>
+    </div></div>
+    {% endif %}
+  </section>
+
+  {# ============================================================ 2. Buy #}
+  <section class="col" aria-labelledby="c-buy">
+    <header class="col-head">
+      <span class="num">2</span>
+      <h2 id="c-buy">Buy</h2>
+      <b class="badge">{{ to_buy|length }}</b>
+      <span class="col-sub">Approved, waiting for the file</span>
+    </header>
+    {% if to_buy %}
+    <div class="col-tools">
+      {% set todo = to_buy|rejectattr("researched_at")|rejectattr("id", "in", researching)|list %}
+      {% if agent_enabled and todo %}
+      <form method="post" action="{{ url_for('research_route') }}" class="inline">
+        <button class="btn primary sm" type="submit" title="Find the best place to buy each track">✦ Find links ({{ todo|length }})</button>
+      </form>
+      {% endif %}
+      <details class="menu">
+        <summary class="btn ghost sm">Search all</summary>
+        <form method="post" action="{{ url_for('open_searches') }}" class="menu-pop">
+          {% for s in stores %}<button type="submit" name="store" value="{{ s.key }}" class="menu-item">Open all on {{ s.name }}</button>{% endfor %}
+        </form>
+      </details>
+      <form method="post" action="{{ url_for('rescan_downloads') }}" class="inline push">
+        <button class="btn ghost sm" title="Rescan Downloads for new files">↻ Downloads</button>
+      </form>
+    </div>
+    {% endif %}
+    <div class="col-body">
+      {% for t in to_buy %}
+      <article class="card buy {% if t.id in hl %}arrive{% endif %}">
+        <div class="card-top">
+          {{ art(t, 44) }}
+          <div class="main">
+            <div class="t" title="{{ t.title }}">{{ t.title }}</div>
+            <div class="a" title="{{ t.artist }}">{{ t.artist }}</div>
+          </div>
+        </div>
+        {% if t.id in researching %}
+          <div class="agent busy"><span class="spin" aria-hidden="true"></span>Finding the best place to buy…</div>
+        {% elif t.buy_url %}
+          <div class="agent">
+            <span class="store-tag">{{ t.buy_store_name }}</span>
+            {% if t.buy_confidence and t.buy_store != "deezer" %}<span class="conf {{ t.buy_confidence }}">{{ t.buy_confidence }}</span>{% endif %}
+            <span class="buylabel" title="{{ t.buy_note }}">{{ t.buy_label }}</span>
+          </div>
+          {% if t.research_error %}<p class="note warn">⚠ {{ t.research_error }}</p>
+          {% elif t.buy_store == "deezer" %}<p class="note">Not sold in any download store.{% if t.buy_note %} {{ t.buy_note }}{% endif %}</p>
+          {% elif t.buy_note %}<p class="note clamp" title="{{ t.buy_note }}">{{ t.buy_note }}</p>{% endif %}
+        {% elif t.researched_at %}
+          <p class="note warn">{% if t.research_error %}⚠ {{ t.research_error }}{% else %}Not found in any store or on Deezer.{% endif %}</p>
+        {% endif %}
+        <div class="card-btns">
+          {% if t.buy_url and t.id not in researching %}
+            {% if t.buy_store == "deezer" %}
+            <a class="btn primary sm" href="{{ t.buy_url }}" target="_blank" rel="noopener">Listen on Deezer ↗</a>
+            {% elif t.buy_confidence == "low" %}
+            <a class="btn sm" href="{{ t.buy_url }}" target="_blank" rel="noopener" title="Not sure it's the right version - check before buying">Check on {{ t.buy_store_name }} ↗</a>
+            {% else %}
+            <a class="btn primary sm" href="{{ t.buy_url }}" target="_blank" rel="noopener">Buy on {{ t.buy_store_name }} ↗</a>
+            {% endif %}
+          {% elif agent_enabled and t.id not in researching and not t.researched_at %}
+            <form method="post" action="{{ url_for('research_route') }}" class="inline"><button class="btn sm" name="id" value="{{ t.id }}">✦ Find best link</button></form>
+          {% endif %}
+          {% if t.buy_store != "beatport.com" or t.buy_confidence == "low" %}
+          <a class="btn {% if t.buy_url and t.buy_confidence != 'low' %}ghost{% elif not (agent_enabled and not t.researched_at) or t.buy_url %}primary{% else %}ghost{% endif %} sm" href="{{ beatport_search(t) }}" target="_blank" rel="noopener">Search Beatport ↗</a>
+          {% endif %}
+        </div>
+        <div class="card-links">
+          {% if t.buy_store == "beatport.com" and t.buy_confidence != "low" %}<a href="{{ beatport_search(t) }}" target="_blank" rel="noopener">Beatport search</a>{% endif %}
+          {% if t.deezer_url and t.buy_store != "deezer" %}<a href="{{ t.deezer_url }}" target="_blank" rel="noopener">Deezer</a>{% endif %}
+          {% if agent_enabled and t.researched_at and t.id not in researching %}
+          <form method="post" action="{{ url_for('research_route') }}" class="inline"><button class="link" name="id" value="{{ t.id }}">Research again</button></form>
+          {% endif %}
+          <details class="menu">
+            <summary>Search</summary>
+            <div class="menu-pop">{% for l in store_links(t) %}<a class="menu-item" href="{{ l.url }}" target="_blank" rel="noopener">{{ l.name }} search ↗</a>{% endfor %}</div>
+          </details>
+          <a href="{{ url_for('attach_page', track_id=t.id) }}">Attach file</a>
+          <form method="post" action="{{ url_for('move', track_id=t.id, status='pending') }}" class="inline"><button class="link" title="Move back to Scan">← Back</button></form>
+          <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}" class="inline"><button class="link">Skip</button></form>
+        </div>
+      </article>
+      {% else %}
+      <div class="col-empty">
+        <div class="empty-art" aria-hidden="true">$</div>
+        <p>Nothing to buy.</p>
+        <p class="muted small">Approve tracks in Scan and they'll land here, with the best place to buy each one.</p>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ============================================================ 3. Import #}
+  <section class="col" aria-labelledby="c-import">
+    <header class="col-head">
+      <span class="num">3</span>
+      <h2 id="c-import">Import</h2>
+      <b class="badge {% if ready %}hot{% endif %}">{{ ready|length }}</b>
+      <span class="col-sub" title="Recent files in other folders count too">Files found in {% for d in search_dirs %}<code>{{ d|tilde }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</span>
+    </header>
+    <div class="col-body">
+      {% for t in ready %}
+      <article class="card ready {% if t.id in hl %}arrive{% endif %}">
+        <div class="card-top">
+          {{ art(t, 44) }}
+          <div class="main">
+            <div class="t" title="{{ t.title }}">{{ t.title }}</div>
+            <div class="a" title="{{ t.artist }}">{{ t.artist }}</div>
+          </div>
+          <span class="chip ok">{% if t.file %}Attached{% else %}File found{% endif %}</span>
+        </div>
+        <code class="filepath" title="{{ found[t.id] }}">{{ found[t.id]|tilde }}</code>
+        <div class="card-links">
+          {% if can_reveal %}<form method="post" action="{{ url_for('reveal', track_id=t.id) }}" class="inline"><button class="link">Show in Finder</button></form>{% endif %}
+          {% if t.file %}
+          <form method="post" action="{{ url_for('detach', track_id=t.id) }}" class="inline"><button class="link">Detach</button></form>
+          {% else %}
+          <a href="{{ url_for('attach_page', track_id=t.id) }}">Wrong file?</a>
+          {% endif %}
+          <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}" class="inline"><button class="link">Skip</button></form>
+        </div>
+      </article>
+      {% else %}
+      <div class="col-empty">
+        <div class="empty-art" aria-hidden="true">⇣</div>
+        <p>No files yet.</p>
+        <p class="muted small">Tracks you buy land here once the file appears in {% for d in search_dirs %}<code>{{ d|tilde }}</code>{% if not loop.last %} or {% endif %}{% endfor %} (subfolders too).</p>
+        {% if to_buy %}<form method="post" action="{{ url_for('rescan_downloads') }}"><button class="btn ghost sm">Rescan Downloads</button></form>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% if ready %}
+    <form method="post" action="{{ url_for('do_import') }}" class="col-foot stack">
+      <button class="btn primary wide" type="submit">Import {{ ready|length }} into rekordbox →</button>
+      <span class="muted small">Into <code>{{ today_playlist }}</code>. Quit rekordbox first so they go straight in.</span>
+    </form>
+    {% endif %}
+  </section>
+
+  {# ============================================================ 4. Playlists #}
+  <section class="col" aria-labelledby="c-pl">
+    <header class="col-head">
+      <span class="num">4</span>
+      <h2 id="c-pl">Playlists</h2>
+      <b class="badge">{{ playlists|length }}</b>
+      <span class="col-sub">In rekordbox, one per day</span>
+    </header>
+    {% if playlists and can_reveal %}
+    <div class="col-tools">
+      <form method="post" action="{{ url_for('open_rekordbox') }}" class="inline"><button class="btn ghost sm">Open rekordbox</button></form>
+    </div>
+    {% endif %}
+    <div class="col-body">
+      {% for g in playlists %}
+      <details class="pl {% if g.method == 'xml' %}pending{% endif %}" {% if loop.first %}open{% endif %}>
+        <summary class="pl-head">
+          <div class="pl-icon" aria-hidden="true">≡</div>
+          <div class="main">
+            <div class="t">{{ g.name }}</div>
+            <div class="a">{{ g.tracks|length }} track{{ "s" if g.tracks|length != 1 }}{% if g.at %} · {{ g.at|ago }}{% endif %}</div>
+          </div>
+          {% if g.method == "db" %}<span class="pill ok" title="In rekordbox">✓</span>
+          {% elif g.method == "xml" %}<span class="pill warn" title="{{ g.pending }} of {{ g.tracks|length }} tracks not in rekordbox yet">Not in rekordbox yet</span>
+          {% else %}<span class="pill" title="Imported before djsync recorded how">?</span>{% endif %}
+        </summary>
+        <div class="pl-body">
+          {% if g.method != "db" %}
+          <div class="pl-warn">
+            {% if g.method == "xml" %}{% if g.pending < g.tracks|length %}{{ g.pending }} of {{ g.tracks|length }} tracks aren't{% else %}These aren't{% endif %} in rekordbox yet (it was open during import).{% else %}djsync didn't record whether these reached rekordbox.{% endif %}
+            Quit rekordbox, then:
+            <form method="post" action="{{ url_for('retry_db') }}"><button class="btn primary sm" name="playlist" value="{{ g.name }}">Retry: add to rekordbox</button></form>
+            {% if g.method == "xml" %}
+            <details class="howto">
+              <summary>Or import the XML yourself</summary>
+              <ol>
+                <li><b>Preferences → Advanced → Database → rekordbox xml → Imported Library</b>: choose <code>{{ g.xml|tilde }}</code>{% if can_reveal and g.xml %} (<form method="post" action="{{ url_for('reveal_path') }}" class="inline"><button class="link" name="path" value="{{ g.xml }}">show in Finder</button></form>){% endif %}.</li>
+                <li><b>Preferences → View → Layout</b>: tick <b>rekordbox xml</b>.</li>
+                <li>Sidebar <b>rekordbox xml → Playlists</b>: right-click <b>{{ g.name }}</b> → <b>Import Playlist</b>.</li>
+              </ol>
+            </details>
+            {% endif %}
+          </div>
+          {% endif %}
+          <ul class="pl-tracks">
+            {% for t in g.tracks %}
+            <li class="{% if t.id in hl %}arrive{% endif %}">
+              {{ art(t, 32) }}
+              <div class="main"><div class="t" title="{{ t.title }}">{{ t.title }}</div><div class="a" title="{{ t.file|tilde }}">{{ t.artist }}</div></div>
+              {% if can_reveal and t.file %}<form method="post" action="{{ url_for('reveal_path') }}" class="inline"><button class="link ic-link" name="path" value="{{ t.file }}" title="Show in Finder" aria-label="Show {{ t.title }} in Finder">⌕</button></form>{% endif %}
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </details>
+      {% else %}
+      <div class="col-empty">
+        <div class="empty-art" aria-hidden="true">≡</div>
+        <p>No playlists yet.</p>
+        <p class="muted small">Imports go into <code>{{ today_playlist }}</code>.</p>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+{# ================================================================ Archive #}
+{% else %}
+<div class="archive">
+  <section class="head">
+    <div>
+      <h1>Archive</h1>
+      <p class="muted">Tracks you skipped, and ones that reached rekordbox without going through djsync.</p>
+    </div>
+  </section>
+  <h2 class="sub-h">Skipped <span class="muted">{{ skipped|length }}</span></h2>
+  {% if skipped %}
+  <div class="list compact">
+    {% for t in skipped %}
+    <article class="row {% if t.id in hl %}arrive{% endif %}">
+      {{ art(t, 40) }}
+      <div class="main"><div class="t">{{ t.title }}</div><div class="a">{{ t.artist }}</div></div>
+      <form method="post" action="{{ url_for('move', track_id=t.id, status='pending') }}" class="inline"><button class="btn ghost sm">Back to Scan</button></form>
+    </article>
     {% endfor %}
   </div>
-  <div class="dock">
-    <div class="wrap dock-row">
-      <span id="count" class="muted"></span>
-      <span class="spacer"></span>
-      <button class="btn primary lg" type="submit">Approve selected</button>
-    </div>
-  </div>
-</form>
-{% else %}
-<div class="empty">
-  <div class="empty-art" aria-hidden="true">♪</div>
-  <h2>You're all caught up</h2>
-  <p class="muted">Like some songs on Spotify, then scan again to see what's missing from rekordbox.</p>
-  <form method="post" action="{{ url_for('scan') }}"><button class="btn primary">Scan Spotify</button></form>
-</div>
-{% endif %}
+  {% else %}<p class="muted">Nothing skipped.</p>{% endif %}
 
-{# ------------------------------------------------------------------ To buy #}
-{% elif tab == "buy" %}
-<section class="head">
-  <div>
-    <h1>To buy</h1>
-    <p class="muted">Buy these, and they'll move to <b>Ready to import</b> as soon as the files land in <code>{{ watch_dir|tilde }}</code> or any folder inside it.</p>
+  <h2 class="sub-h">Already in rekordbox <span class="muted">{{ in_rekordbox|length }}</span></h2>
+  {% if in_rekordbox %}
+  <div class="list compact">
+    {% for t in in_rekordbox %}
+    <article class="row">
+      {{ art(t, 40) }}
+      <div class="main"><div class="t">{{ t.title }}</div><div class="a">{{ t.artist }}</div></div>
+      <span class="pill ok">In rekordbox</span>
+    </article>
+    {% endfor %}
   </div>
-</section>
-{% if to_buy %}
-<div class="toolbar">
-  {% set todo = to_buy|rejectattr("researched_at")|rejectattr("id", "in", researching)|list %}
-  {% if agent_enabled and todo %}
-  <form method="post" action="{{ url_for('research_route') }}" class="inline">
-    <button class="btn primary" type="submit">✦ Find best links for {{ todo|length }} track{{ "s" if todo|length != 1 }}</button>
-  </form>
-  {% endif %}
-  <form method="post" action="{{ url_for('open_searches') }}" class="seg" aria-label="Open store searches for every track">
-    <span class="seg-label">Search all on</span>
-    {% for s in stores %}<button type="submit" name="store" value="{{ s.key }}" title="Open all on {{ s.name }}">{{ s.name }}</button>{% endfor %}
-  </form>
-  <span class="spacer"></span>
-  <form method="post" action="{{ url_for('rescan_downloads') }}" class="inline"><button class="btn ghost">Rescan Downloads</button></form>
+  {% else %}<p class="muted">None.</p>{% endif %}
 </div>
-
-<div class="list">
-  {% for t in to_buy %}
-  <article class="row">
-    {{ art(t, 56) }}
-    <div class="main">
-      <div class="t">{{ t.title }}</div>
-      <div class="a">{{ t.artist }}{% if t.album %} · <span class="muted">{{ t.album }}</span>{% endif %}</div>
-      {% if t.id in researching %}
-        <div class="agent busy"><span class="spin" aria-hidden="true"></span>Finding the best place to buy…</div>
-      {% elif t.buy_url %}
-        <div class="agent">
-          <span class="store-tag">{{ t.buy_store_name }}</span>
-          <span class="buylabel">{{ t.buy_label }}</span>
-          {% if t.buy_confidence and t.buy_store != "deezer" %}<span class="conf {{ t.buy_confidence }}">{{ t.buy_confidence }} match</span>{% endif %}
-        </div>
-        {% if t.research_error %}
-        <p class="note warn">⚠ {{ t.research_error }}</p>
-        {% else %}
-        <p class="note">{% if t.buy_store == "deezer" %}Not found in any download store.{% if t.buy_note %} {{ t.buy_note }}{% endif %}{% else %}{{ t.buy_note }}{% endif %}</p>
-        {% endif %}
-      {% elif t.researched_at %}
-        <p class="note warn">{% if t.research_error %}⚠ {{ t.research_error }}{% else %}Not found in any store or on Deezer.{% if t.buy_note %} {{ t.buy_note }}{% endif %}{% endif %}</p>
-      {% endif %}
-    </div>
-    <div class="actions">
-      {% if t.buy_url and t.id not in researching %}
-        {% if t.buy_store == "deezer" %}
-        <a class="btn primary" href="{{ t.buy_url }}" target="_blank" rel="noopener">Listen on Deezer ↗</a>
-        {% elif t.buy_confidence == "low" %}
-        <a class="btn" href="{{ t.buy_url }}" target="_blank" rel="noopener" title="Not sure this is the right version - check before buying">Check on {{ t.buy_store_name }} ↗</a>
-        {% else %}
-        <a class="btn primary" href="{{ t.buy_url }}" target="_blank" rel="noopener">Buy on {{ t.buy_store_name }} ↗</a>
-        {% endif %}
-      {% elif agent_enabled and t.id not in researching and not t.researched_at %}
-        <form method="post" action="{{ url_for('research_route') }}" class="inline"><button class="btn" name="id" value="{{ t.id }}">✦ Find best link</button></form>
-      {% endif %}
-      {% if t.buy_store != "beatport.com" or t.buy_confidence == "low" %}
-      <a class="btn {% if t.buy_url and t.buy_confidence != 'low' %}ghost{% elif t.buy_url %}primary{% endif %}" href="{{ beatport_search(t) }}" target="_blank" rel="noopener">Search Beatport ↗</a>
-      {% endif %}
-      <div class="sub">
-        {% if t.buy_store == "beatport.com" and t.buy_confidence != "low" %}<a href="{{ beatport_search(t) }}" target="_blank" rel="noopener">Beatport search</a>{% endif %}
-        {% if t.deezer_url and t.buy_store != "deezer" %}<a href="{{ t.deezer_url }}" target="_blank" rel="noopener">Listen on Deezer</a>{% endif %}
-        {% if agent_enabled and t.researched_at and t.id not in researching %}
-        <form method="post" action="{{ url_for('research_route') }}" class="inline"><button class="link" name="id" value="{{ t.id }}">Research again</button></form>
-        {% endif %}
-        <details class="menu">
-          <summary>Search</summary>
-          <div class="menu-pop">{% for l in store_links(t) %}<a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.name }} search ↗</a>{% endfor %}</div>
-        </details>
-        <a href="{{ url_for('attach_page', track_id=t.id) }}">Attach file…</a>
-        <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}" class="inline"><button class="link">Skip</button></form>
-      </div>
-    </div>
-  </article>
-  {% endfor %}
-</div>
-{% else %}
-<div class="empty">
-  <div class="empty-art" aria-hidden="true">✓</div>
-  <h2>Nothing left to buy</h2>
-  <p class="muted">{% if ready %}Everything you approved has a file. Head to <a href="{{ url_for('index', tab='ready') }}">Ready to import</a>.{% else %}Approve tracks in <a href="{{ url_for('index', tab='review') }}">Review</a> and they'll show up here.{% endif %}</p>
-</div>
-{% endif %}
-
-{# ------------------------------------------------------------------ Ready #}
-{% elif tab == "ready" %}
-<section class="head">
-  <div>
-    <h1>Ready to import</h1>
-    <p class="muted">Files found for the tracks you approved. Check each one, then import them into today's playlist.</p>
-  </div>
-  <form method="post" action="{{ url_for('rescan_downloads') }}" class="inline"><button class="btn ghost">Rescan Downloads</button></form>
-</section>
-{% if ready %}
-<div class="list">
-  {% for t in ready %}
-  <article class="row">
-    {{ art(t, 56) }}
-    <div class="main">
-      <div class="t">{{ t.title }}</div>
-      <div class="a">{{ t.artist }}</div>
-      <div class="filepath" title="{{ found[t.id] }}">
-        <span class="chip ok">{% if t.file %}Attached{% else %}File found{% endif %}</span>
-        <code>{{ found[t.id]|tilde }}</code>
-      </div>
-    </div>
-    <div class="actions">
-      <div class="sub">
-        {% if can_reveal %}<form method="post" action="{{ url_for('reveal', track_id=t.id) }}" class="inline"><button class="link">Show in Finder</button></form>{% endif %}
-        {% if t.file %}
-        <form method="post" action="{{ url_for('detach', track_id=t.id) }}" class="inline"><button class="link">Detach</button></form>
-        {% else %}
-        <a href="{{ url_for('attach_page', track_id=t.id) }}">Wrong file?</a>
-        {% endif %}
-        <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}" class="inline"><button class="link">Skip</button></form>
-      </div>
-    </div>
-  </article>
-  {% endfor %}
-</div>
-<form method="post" action="{{ url_for('do_import') }}" class="dock">
-  <div class="wrap dock-row">
-    <div>
-      <div><b>{{ ready|length }} track{{ "s" if ready|length != 1 }}</b> → <code>{{ today_playlist }}</code></div>
-      <div class="muted small">Quit rekordbox first so they go straight in. Otherwise djsync saves an XML file you can retry later.</div>
-    </div>
-    <span class="spacer"></span>
-    <button class="btn primary lg" type="submit">Import {{ ready|length }} into rekordbox</button>
-  </div>
-</form>
-{% else %}
-<div class="empty">
-  <div class="empty-art" aria-hidden="true">⇣</div>
-  <h2>No files yet</h2>
-  <p class="muted">Files you buy appear here once they land in <code>{{ watch_dir|tilde }}</code>. If one doesn't show up, use <b>Attach file…</b> in <a href="{{ url_for('index', tab='buy') }}">To buy</a>.</p>
-</div>
-{% endif %}
-
-{# ------------------------------------------------------------------ Imported #}
-{% elif tab == "imported" %}
-<section class="head">
-  <div>
-    <h1>Imported</h1>
-    <p class="muted">Your djsync playlists. Each day's imports go into one <code>{{ prefix }}&lt;date&gt;</code> playlist.</p>
-  </div>
-  {% if can_reveal %}<form method="post" action="{{ url_for('open_rekordbox') }}" class="inline"><button class="btn">Open rekordbox</button></form>{% endif %}
-</section>
-{% if playlists %}
-<div class="pl-grid">
-  {% for g in playlists %}
-  <article class="pl {% if g.method == 'xml' %}pending{% endif %}">
-    <header class="pl-head">
-      <div class="pl-icon" aria-hidden="true">≡</div>
-      <div class="main">
-        <div class="t">{{ g.name }}</div>
-        <div class="a muted">{{ g.tracks|length }} track{{ "s" if g.tracks|length != 1 }}{% if g.at %} · {{ g.at|ago }}{% endif %}</div>
-      </div>
-      {% if g.method == "db" %}<span class="pill ok">In rekordbox</span>
-      {% elif g.method == "xml" %}<span class="pill warn">{% if g.pending < g.tracks|length %}{{ g.pending }} of {{ g.tracks|length }} tracks {% endif %}Not in rekordbox yet</span>
-      {% else %}<span class="pill">Status unknown</span>{% endif %}
-    </header>
-    <div class="covers" aria-hidden="true">
-      {% for t in g.tracks[:6] %}{{ art(t, 40) }}{% endfor %}
-      {% if g.tracks|length > 6 %}<span class="more">+{{ g.tracks|length - 6 }}</span>{% endif %}
-    </div>
-    {% if g.method != "db" %}
-    <div class="pl-actions">
-      <form method="post" action="{{ url_for('retry_db') }}" class="inline"><button class="btn primary" name="playlist" value="{{ g.name }}" title="Quit rekordbox first">Retry: add to rekordbox</button></form>
-      {% if can_reveal and g.xml %}<form method="post" action="{{ url_for('reveal_path') }}" class="inline"><button class="btn ghost" name="path" value="{{ g.xml }}">Show XML in Finder</button></form>{% endif %}
-    </div>
-    <details class="howto">
-      <summary>{% if g.method == "xml" %}Or import the XML yourself{% else %}What does this mean?{% endif %}</summary>
-      {% if g.method == "xml" %}
-      <ol>
-        <li><b>Preferences → Advanced → Database → rekordbox xml → Imported Library</b>, choose <code>{{ g.xml|tilde }}</code>.</li>
-        <li><b>Preferences → View → Layout</b>, tick <b>rekordbox xml</b> so it shows in the sidebar.</li>
-        <li>In the sidebar open <b>rekordbox xml → Playlists</b>, right-click <b>{{ g.name }}</b> and choose <b>Import Playlist</b>.</li>
-      </ol>
-      {% else %}
-      <p>This import happened before djsync recorded whether it reached rekordbox. Quit rekordbox and click Retry: if it's already there, nothing is duplicated.</p>
-      {% endif %}
-    </details>
-    {% else %}
-    <p class="muted small">In rekordbox, open <b>Playlists → {{ g.name }}</b>, select the tracks and choose <b>Analyze Track</b>.</p>
-    {% endif %}
-    <details class="tracks">
-      <summary>Tracks</summary>
-      <ul>
-        {% for t in g.tracks %}
-        <li>
-          <div class="main"><div class="t">{{ t.title }}</div><div class="a">{{ t.artist }}</div>
-            {% if t.file %}<code class="small">{{ t.file|tilde }}</code>{% endif %}</div>
-          {% if can_reveal and t.file %}<form method="post" action="{{ url_for('reveal_path') }}" class="inline"><button class="link" name="path" value="{{ t.file }}">Show in Finder</button></form>{% endif %}
-        </li>
-        {% endfor %}
-      </ul>
-    </details>
-  </article>
-  {% endfor %}
-</div>
-{% else %}
-<div class="empty">
-  <div class="empty-art" aria-hidden="true">≡</div>
-  <h2>No imports yet</h2>
-  <p class="muted">When you import tracks they're added to a <code>{{ today_playlist }}</code> playlist and listed here.</p>
-</div>
-{% endif %}
-
-{# ------------------------------------------------------------------ Archive #}
-{% elif tab == "archive" %}
-<section class="head">
-  <div>
-    <h1>Archive</h1>
-    <p class="muted">Tracks you skipped, and ones that reached rekordbox without going through djsync.</p>
-  </div>
-</section>
-<h2 class="sub-h">Skipped <span class="muted">{{ skipped|length }}</span></h2>
-{% if skipped %}
-<div class="list compact">
-  {% for t in skipped %}
-  <article class="row">
-    {{ art(t, 40) }}
-    <div class="main"><div class="t">{{ t.title }}</div><div class="a">{{ t.artist }}</div></div>
-    <form method="post" action="{{ url_for('move', track_id=t.id, status='pending') }}" class="inline"><button class="btn ghost">Restore</button></form>
-  </article>
-  {% endfor %}
-</div>
-{% else %}<p class="muted">Nothing skipped.</p>{% endif %}
-
-<h2 class="sub-h">Already in rekordbox <span class="muted">{{ in_rekordbox|length }}</span></h2>
-{% if in_rekordbox %}
-<div class="list compact">
-  {% for t in in_rekordbox %}
-  <article class="row">
-    {{ art(t, 40) }}
-    <div class="main"><div class="t">{{ t.title }}</div><div class="a">{{ t.artist }}</div></div>
-    <span class="pill ok">In rekordbox</span>
-  </article>
-  {% endfor %}
-</div>
-{% else %}<p class="muted">None.</p>{% endif %}
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
-  function boxes() { return document.querySelectorAll('input[name=id]'); }
+  function boxes() { return [...document.querySelectorAll('.card.scan input[name=id]')]; }
   function toggleAll(v) {
-    boxes().forEach(b => { if (!b.closest('.tcard').hidden) b.checked = v; });
+    boxes().forEach(b => { if (!b.closest('.card').hidden) b.checked = v; });
     count();
   }
   function count() {
     const el = document.getElementById('count'); if (!el) return;
-    const b = [...boxes()], n = b.filter(x => x.checked).length;
-    el.textContent = n + ' of ' + b.length + ' selected';
+    const b = boxes(), n = b.filter(x => x.checked).length;
+    el.textContent = n ? n + ' of ' + b.length + ' selected' : 'Tick cards, or use ✓ / ✕';
+    const btn = document.getElementById('approve-btn');
+    if (btn) btn.disabled = !n;
   }
   function filterCards(q) {
     q = q.toLowerCase().trim();
-    document.querySelectorAll('.tcard').forEach(c => c.hidden = q && !c.dataset.text.includes(q));
+    document.querySelectorAll('.card.scan').forEach(c => c.hidden = !!q && !c.dataset.text.includes(q));
   }
   count();
+  // Scroll each column to its newly arrived card.
+  document.querySelectorAll('.col-body .arrive').forEach(c => c.scrollIntoView({block: 'nearest'}));
+  if (location.search.includes('hl=')) history.replaceState(null, '', location.pathname + (location.search.includes('view=archive') ? '?view=archive' : ''));
   {% if researching %}
   // The agent is working: reload when results come in, unless you're mid-selection.
   let dirty = false;
