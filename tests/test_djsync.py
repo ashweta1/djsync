@@ -558,3 +558,158 @@ def test_retry_after_two_same_day_xml_imports(cfg, tmp_path, monkeypatch):
     assert r.added == 2 and len(db.playlists) == 1 and len(db.songs) == 2
     # retrying again changes nothing
     assert core.retry_targets(State.load(cfg.state_path)) == []
+
+
+# --- research agent ------------------------------------------------------------------
+
+import io
+import json as _json
+from types import SimpleNamespace as NS
+
+from djsync import research
+
+
+def _resp(answer, result_urls, stop="end_turn"):
+    blocks = [NS(type="server_tool_use"),
+              NS(type="web_search_tool_result", content=[NS(url=u) for u in result_urls]),
+              NS(type="text", text=_json.dumps(answer))]
+    return NS(content=blocks, stop_reason=stop)
+
+
+class FakeClaude:
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.calls = []
+        self.beta = NS(messages=NS(create=self._create))
+
+    def _create(self, **kw):
+        self.calls.append(kw)
+        r = self.responses.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+
+def _no_deezer(url, timeout=15):
+    return io.BytesIO(b'{"error": {}}')
+
+
+GLUE = Track(id="1", artist="Bicep", title="Glue", isrc="GBCFB1700200", duration_ms=269000)
+BP = "https://www.beatport.com/track/glue/9283745"
+
+
+def _answer(**kw):
+    a = {"found": True, "store": "Beatport", "url": BP, "title": "Glue", "mix": "Original Mix",
+         "artists": "Bicep", "confidence": "high", "reason": "Same artist, title and ISRC."}
+    a.update(kw)
+    return a
+
+
+def test_research_picks_beatport_link_from_results():
+    client = FakeClaude(_resp(_answer(url=BP + "?utm=x"), [BP, "https://www.beatport.com/release/glue/1"]))
+    f = research.research(Config(), GLUE, client, opener=_no_deezer)
+    assert (f.store, f.store_name, f.url) == ("beatport.com", "Beatport", BP)
+    assert f.label == "Glue (Original Mix) - Bicep" and f.confidence == "high"
+    call = client.calls[0]
+    assert call["model"] == "claude-opus-5-5"
+    assert call["tools"][0]["type"] == "web_search_20260209"
+    assert "GBCFB1700200" in call["messages"][0]["content"] and "4:29" in call["messages"][0]["content"]
+
+
+def test_research_rejects_links_not_in_search_results():
+    client = FakeClaude(_resp(_answer(url="https://www.beatport.com/track/glue/1111"), [BP]))
+    f = research.research(Config(), GLUE, client, opener=_no_deezer)
+    assert f.url == "" and "ignored" in f.note
+
+
+def test_research_rejects_non_store_sites():
+    pirate = "https://free-mp3-download.example/bicep-glue"
+    client = FakeClaude(_resp(_answer(store="Some site", url=pirate), [pirate]))
+    f = research.research(Config(), GLUE, client, opener=_no_deezer)
+    assert f.url == ""
+
+
+def test_research_other_store_when_not_on_beatport():
+    bc = "https://bicep.bandcamp.com/track/glue"
+    client = FakeClaude(_resp(_answer(store="Bandcamp", url=bc, mix=""), [bc]))
+    f = research.research(Config(), GLUE, client, opener=_no_deezer)
+    assert (f.store, f.store_name, f.url) == ("bandcamp.com", "Bandcamp", bc)
+    assert f.label == "Glue - Bicep"
+
+
+def test_research_falls_back_to_deezer():
+    def deezer(url, timeout=15):
+        assert "isrc:GBCFB1700200" in url
+        return io.BytesIO(b'{"id": 1, "link": "https://www.deezer.com/track/1"}')
+    client = FakeClaude(_resp({"found": False, "store": "", "url": "", "title": "", "mix": "",
+                               "artists": "", "confidence": "low", "reason": "Not sold anywhere."}, []))
+    f = research.research(Config(), GLUE, client, opener=deezer)
+    assert (f.store, f.url) == ("deezer", "https://www.deezer.com/track/1")
+    assert f.note == "Not sold anywhere."
+
+
+def test_deezer_search_fallback_checks_the_match():
+    def deezer(url, timeout=15):
+        if "isrc:" in url:
+            return io.BytesIO(b'{"error": {"type": "DataException"}}')
+        return io.BytesIO(_json.dumps({"data": [
+            {"title": "Glue", "artist": {"name": "Someone Else"}, "link": "https://www.deezer.com/track/9"},
+            {"title": "Glue", "artist": {"name": "Bicep"}, "link": "https://www.deezer.com/track/2"},
+        ]}).encode())
+    assert research.deezer_link(GLUE, deezer) == "https://www.deezer.com/track/2"
+
+
+def test_research_continues_after_pause_turn():
+    client = FakeClaude(NS(content=[NS(type="web_search_tool_result", content=[NS(url=BP)])],
+                           stop_reason="pause_turn"),
+                        _resp(_answer(), []))
+    f = research.research(Config(), GLUE, client, opener=_no_deezer)
+    assert f.url == BP and len(client.calls) == 2
+    assert client.calls[1]["messages"][1]["role"] == "assistant"
+
+
+def test_research_retries_without_schema_on_400():
+    class Bad(Exception):
+        status_code = 400
+    client = FakeClaude(Bad("format not supported with citations"), _resp(_answer(), [BP]))
+    f = research.research(Config(), GLUE, client, opener=_no_deezer)
+    assert f.url == BP
+    assert "format" in client.calls[0]["output_config"]
+    assert "format" not in client.calls[1]["output_config"]
+
+
+def test_research_reports_errors_instead_of_crashing():
+    client = FakeClaude(RuntimeError("no API key"))
+    f = research.research(Config(), GLUE, client, opener=_no_deezer)
+    assert "no API key" in f.error and f.url == ""
+
+
+def test_review_page_shows_agent_results(cfg):
+    from djsync.web import create_app
+    st = State(path=cfg.state_path)
+    st.tracks["1"] = Track(id="1", artist="Bicep", title="Glue", status=APPROVED)
+    research.apply(st.tracks["1"], research.Finding(
+        store="beatport.com", store_name="Beatport", url=BP, label="Glue (Extended Mix) - Bicep",
+        confidence="high", note="Exact match.", deezer_url="https://www.deezer.com/track/1"))
+    st.tracks["2"] = Track(id="2", artist="Peggy Gou", title="Starry Night", status=APPROVED)
+    st.save()
+    html = create_app(cfg).test_client().get("/").get_data(as_text=True)
+    assert "Buy on Beatport" in html and BP in html and "high match" in html
+    assert "Listen on Deezer" in html
+    assert "Find best links for 1 track" in html  # Starry Night not researched yet
+
+
+def test_approving_starts_research(cfg, monkeypatch):
+    from djsync.web import create_app
+    seen = []
+    monkeypatch.setattr(research, "research_many", lambda c, tracks, on_done=None: seen.extend(t.id for t in tracks))
+    st = State(path=cfg.state_path)
+    st.tracks["1"] = Track(id="1", artist="Bicep", title="Glue", status=PENDING)
+    st.save()
+    create_app(cfg).test_client().post("/approve", data={"id": ["1"]})
+    import time
+    for _ in range(50):
+        if seen:
+            break
+        time.sleep(0.02)
+    assert seen == ["1"]

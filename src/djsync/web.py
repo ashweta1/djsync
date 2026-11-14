@@ -10,7 +10,7 @@ from pathlib import Path
 
 from flask import Flask, flash, redirect, render_template, request, url_for
 
-from . import core, files, stores
+from . import core, files, research, stores
 from .config import Config
 from .state import APPROVED, IMPORTED, IN_REKORDBOX, PENDING, SKIPPED, State
 
@@ -19,6 +19,36 @@ def create_app(cfg: Config) -> Flask:
     app = Flask(__name__)
     app.secret_key = "djsync-local"  # only used for flash messages on localhost
     lock = threading.Lock()
+    researching: set[str] = set()   # track ids the agent is working on right now
+
+    def start_research(ids: list[str]) -> int:
+        """Research these tracks in a background thread. Returns how many started."""
+        st = state()
+        todo = [st.tracks[i] for i in ids if i in st.tracks and i not in researching]
+        if not todo:
+            return 0
+        with lock:
+            researching.update(t.id for t in todo)
+
+        def save(track, finding):
+            with lock:
+                s = state()
+                if track.id in s.tracks:
+                    research.apply(s.tracks[track.id], finding)
+                    s.save()
+                researching.discard(track.id)
+
+        def run():
+            try:
+                research.research_many(cfg, todo, on_done=save)
+            finally:
+                with lock:
+                    researching.difference_update(t.id for t in todo)
+
+        threading.Thread(target=run, daemon=True).start()
+        return len(todo)
+
+    app.config["start_research"] = start_research
 
     def state() -> State:
         return State.load(cfg.state_path)
@@ -28,6 +58,8 @@ def create_app(cfg: Config) -> Flask:
         return {
             "store_links": lambda t: stores.links(t.artist, t.title, cfg.stores),
             "can_reveal": sys.platform == "darwin",
+            "researching": researching,
+            "agent_enabled": cfg.agent_enabled,
         }
 
     @app.template_filter("tilde")
@@ -95,8 +127,13 @@ def create_app(cfg: Config) -> Flask:
             st.set_status([i for i in pending if i in chosen], APPROVED)
             st.set_status([i for i in pending if i not in chosen], SKIPPED)
             st.save()
-            flash(f"Approved {len(chosen & set(pending))} tracks. Buy them from the links below; "
-                  f"they'll be picked up from {cfg.watch_dir}.", "ok")
+        approved_now = [i for i in pending if i in chosen]
+        if cfg.agent_enabled and cfg.agent_auto and approved_now:
+            start_research(approved_now)
+        msg = f"Approved {len(approved_now)} tracks."
+        if cfg.agent_enabled and cfg.agent_auto and approved_now:
+            msg += " The agent is finding the best place to buy each one."
+        flash(msg + f" Purchased files are picked up from {cfg.watch_dir}.", "ok")
         return redirect(url_for("index") + "#approved")
 
     @app.post("/open")
@@ -113,6 +150,26 @@ def create_app(cfg: Config) -> Flask:
             flash(f"Opened the first {n} of {len(urls)} searches. Click again after "
                   "you've bought these to open the next ones.", "ok")
         return redirect(url_for("index") + "#approved")
+
+    @app.post("/research")
+    def research_route():
+        """Find the best store link: one track (id=...) or every approved track without one."""
+        st = state()
+        track_id = request.form.get("id")
+        if track_id:
+            ids = [track_id]
+        else:
+            matched, waiting = core.match_files(cfg, st)
+            ids = [t.id for t in waiting if not t.researched_at]
+        n = start_research(ids)
+        if n:
+            flash(f"Researching {n} track{'s' if n != 1 else ''}. Results appear here as they "
+                  "come in (about 20-60 seconds each, several at once).", "ok")
+        return redirect(url_for("index") + "#approved")
+
+    @app.get("/research-status")
+    def research_status():
+        return {"running": len(researching)}
 
     @app.post("/rescan-downloads")
     def rescan_downloads():

@@ -48,6 +48,17 @@ file_threshold = 75
 # Stores to show buy links for, in order.
 enabled = ["beatport", "bandcamp", "deezer"]
 
+[agent]
+# The research agent searches Beatport for each approved track, picks the best
+# match and gives you a direct link (Deezer if Beatport doesn't have it).
+# Needs an Anthropic API key: set ANTHROPIC_API_KEY, or run `ant auth login`.
+enabled = true
+# Research tracks automatically as soon as you approve them.
+auto = true
+model = "claude-opus-5-5"
+# low | medium | high - higher is more thorough and costs more
+effort = "medium"
+
 [web]
 port = 5055
 """
@@ -69,6 +80,10 @@ class Config:
         default_factory=lambda: ["beatport", "bandcamp", "deezer"]
     )
     port: int = 5055
+    agent_enabled: bool = True
+    agent_auto: bool = True
+    agent_model: str = "claude-opus-5-5"
+    agent_effort: str = "medium"
     home: Path = HOME
 
     @property
@@ -115,4 +130,9 @@ def load(path: Path = CONFIG_PATH) -> Config:
     cfg.file_threshold = int(data.get("match", {}).get("file_threshold", 75))
     cfg.stores = list(data.get("stores", {}).get("enabled", cfg.stores))
     cfg.port = int(data.get("web", {}).get("port", 5055))
+    ag = data.get("agent", {})
+    cfg.agent_enabled = bool(ag.get("enabled", True))
+    cfg.agent_auto = bool(ag.get("auto", True))
+    cfg.agent_model = ag.get("model", cfg.agent_model)
+    cfg.agent_effort = ag.get("effort", cfg.agent_effort)
     return cfg

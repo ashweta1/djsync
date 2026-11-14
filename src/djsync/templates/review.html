@@ -50,9 +50,14 @@
     {% if approved %}
     {% if found|length < approved|length %}
     <form method="post" action="{{ url_for('open_searches') }}" class="bar">
-      {% set n = approved|length - found|length %}<span class="muted">Search {{ n }} missing track{{ "s" if n != 1 }}:</span>
+      {% set n = approved|length - found|length %}
+      {% if agent_enabled %}
+      {% set todo = approved|rejectattr("id", "in", found)|rejectattr("researched_at")|rejectattr("id", "in", researching)|list %}
+      {% if todo %}<button type="submit" class="primary" formaction="{{ url_for('research_route') }}">Find best links for {{ todo|length }} track{{ "s" if todo|length != 1 }}</button>{% endif %}
+      {% endif %}
+      <span class="muted">Search {{ n }} missing track{{ "s" if n != 1 }}:</span>
       {% for s in stores %}
-        <button type="submit" name="store" value="{{ s.key }}" {% if loop.first %}class="primary"{% endif %}>Open all on {{ s.name }}</button>
+        <button type="submit" name="store" value="{{ s.key }}">Open all on {{ s.name }}</button>
       {% endfor %}
     </form>
     {% endif %}
@@ -71,7 +76,20 @@
       <img src="{{ t.image }}" alt="" loading="lazy">
       <div class="meta">
         <div class="t">{{ t.title }}</div><div class="a">{{ t.artist }}</div>
-        {% if t.id in found %}<div class="filepath" title="{{ found[t.id] }}">{{ found[t.id]|tilde }}</div>{% endif %}
+        {% if t.id in found %}<div class="filepath" title="{{ found[t.id] }}">{{ found[t.id]|tilde }}</div>
+        {% elif t.id in researching %}<div class="agent busy">Finding the best place to buy…</div>
+        {% elif t.buy_url %}
+        <div class="agent">
+          <a class="buy" href="{{ t.buy_url }}" target="_blank" rel="noopener">{% if t.buy_store == "deezer" %}Listen on Deezer{% else %}Buy on {{ t.buy_store_name }}{% endif %} ↗</a>
+          <span class="buylabel">{{ t.buy_label }}</span>
+          {% if t.buy_confidence and t.buy_store != "deezer" %}<span class="conf {{ t.buy_confidence }}">{{ t.buy_confidence }} match</span>{% endif %}
+          {% if t.buy_store == "deezer" %}<div class="agentnote">Not found in any download store.{% if t.buy_note %} {{ t.buy_note }}{% endif %}</div>
+          {% elif t.buy_note %}<div class="agentnote">{{ t.buy_note }}</div>{% endif %}
+          {% if t.deezer_url and t.buy_store != "deezer" %}<a class="plain" href="{{ t.deezer_url }}" target="_blank" rel="noopener">Listen on Deezer</a>{% endif %}
+        </div>
+        {% elif t.researched_at %}
+        <div class="agent"><div class="agentnote">{% if t.research_error %}{{ t.research_error }}{% else %}Not found in any store or on Deezer.{% if t.buy_note %} {{ t.buy_note }}{% endif %}{% endif %}</div></div>
+        {% endif %}
       </div>
       <div class="links">
         {% if t.id in found %}
@@ -84,7 +102,10 @@
           {% endif %}
         {% else %}
           <a class="attach" href="{{ url_for('attach_page', track_id=t.id) }}">Attach file…</a>
-          {% for l in store_links(t) %}<a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.name }}</a>{% endfor %}
+          {% if agent_enabled and t.id not in researching %}
+          <form method="post" action="{{ url_for('research_route') }}" class="inline"><button class="chip" name="id" value="{{ t.id }}">{% if t.researched_at %}Research again{% else %}Find best link{% endif %}</button></form>
+          {% endif %}
+          <span class="searchlinks" title="Plain store searches">{% for l in store_links(t) %}<a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.name }} search</a>{% endfor %}</span>
         {% endif %}
         <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}" class="inline"><button class="link">Skip</button></form>
       </div>
@@ -174,6 +195,18 @@
 
 </main>
 <script>
+  {% if researching %}
+  // Research is running: reload when results come in, unless you're mid-selection.
+  let dirty = false;
+  document.addEventListener('change', () => dirty = true);
+  const running = {{ researching|length }};
+  setInterval(async () => {
+    try {
+      const r = await (await fetch('{{ url_for("research_status") }}')).json();
+      if (r.running !== running && !dirty) location.reload();
+    } catch (e) {}
+  }, 4000);
+  {% endif %}
   function boxes() { return document.querySelectorAll('input[name=id]'); }
   function toggleAll(v) { boxes().forEach(b => b.checked = v); count(); }
   function count() {

@@ -40,6 +40,30 @@ def cmd_review(cfg, args) -> int:
     return 0
 
 
+def cmd_research(cfg, args) -> int:
+    from . import research
+
+    st = State.load(cfg.state_path)
+    _, waiting = core.match_files(cfg, st)
+    todo = [t for t in waiting if args.again or not t.researched_at]
+    if not todo:
+        print("Nothing to research: every approved track without a file already has a link.")
+        return 0
+    print(f"Researching {len(todo)} track(s)...")
+
+    def done(track, f):
+        s = State.load(cfg.state_path)
+        research.apply(s.tracks[track.id], f)
+        s.save()
+        where = f"{f.store_name}: {f.url}" if f.url else "not found"
+        print(f"  {track.artist} - {track.title}\n      {where}")
+        if f.error:
+            print(f"      ({f.error})")
+
+    research.research_many(cfg, todo, on_done=done)
+    return 0
+
+
 def cmd_retry(cfg) -> int:
     st = State.load(cfg.state_path)
     targets = core.retry_targets(st)
@@ -89,6 +113,8 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("review", help="open the review page in your browser")
     r.add_argument("--scan", action="store_true", help="scan Spotify first")
     r.add_argument("--no-browser", action="store_true")
+    rs = sub.add_parser("research", help="find the best place to buy each approved track")
+    rs.add_argument("--again", action="store_true", help="also redo tracks already researched")
     i = sub.add_parser("import", help="import purchased files into today's djsync-downloads-<date> playlist")
     i.add_argument("--dry-run", action="store_true", help="only show which files match")
     i.add_argument("--retry", action="store_true",
@@ -98,7 +124,8 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     cfg = config.load()
-    handler = {"init": cmd_init, "scan": cmd_scan, "review": cmd_review, "import": cmd_import}
+    handler = {"init": cmd_init, "scan": cmd_scan, "review": cmd_review, "import": cmd_import,
+               "research": cmd_research}
     try:
         return handler[args.cmd](cfg, args)
     except KeyboardInterrupt:

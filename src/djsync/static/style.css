@@ -70,3 +70,21 @@ form.inline { display: inline; }
 .howto { margin: 0; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
 .card details > summary { padding: 8px 14px; }
 .card details[open] > summary { border-bottom: 1px solid var(--line); }
+
+/* research agent */
+.agent { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 13px; }
+.agent.busy { color: var(--muted); font-style: italic; }
+.agent.busy::before { content: ""; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted);
+  border-top-color: transparent; display: inline-block; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+a.buy { background: var(--accent); color: var(--accent-text); padding: 4px 10px; border-radius: 999px;
+  text-decoration: none; font-weight: 600; white-space: nowrap; }
+a.buy:hover { filter: brightness(1.1); }
+.buylabel { color: var(--text); }
+.conf { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+.conf.high { color: var(--accent); }
+.conf.low { color: var(--err); }
+.agentnote { flex-basis: 100%; color: var(--muted); font-size: 12px; }
+.agent a.plain { color: var(--muted); font-size: 12px; }
+.searchlinks { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.searchlinks a { opacity: 0.75; }

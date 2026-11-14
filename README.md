@@ -31,6 +31,26 @@ and djsync finds the files in your downloads folder and imports them.
    leave out "(Original Mix)" and "feat." but keep remix names. Buy the track
    and let it download. Deezer doesn't sell downloads; its link is there so you
    can listen and check you have the right version.
+   **Research agent:** when you approve tracks, an AI agent (Claude, with web
+   search) finds the best place to buy each one:
+   1. It searches **Beatport first** and compares the results with the Spotify
+      track: artist, title, remix/version, length and ISRC. It picks the
+      Extended or Original Mix when Spotify has a radio edit, but never a
+      different remix.
+   2. If Beatport doesn't have it, it **searches the web** for another
+      legitimate store selling the download (Bandcamp, Beatsource, Traxsource,
+      Apple/iTunes, Amazon, Qobuz, 7digital, Boomkat, Bleep) or an official
+      free download on SoundCloud or Hypeddit.
+   3. If no store sells it, it gives the **Deezer** link so you can still listen.
+
+   Each track then shows a **Buy on Beatport ↗** button (or the store it
+   found), the exact version, how confident the match is and a one-line reason.
+   Links are only accepted from known stores, and only if they really appeared
+   in the search results, so the agent can't invent a link or send you to a
+   pirate site. Use **Find best link** or **Research again** on any track, or
+   **Find best links for N tracks** for all of them. The plain store searches
+   are still there too.
+
 4. **Find the files**: djsync looks in your downloads folder **and all its
    subfolders**, including unpacked zip files. Hidden folders and your DJ
    library folder are skipped. It matches files by their tags and by filename,
@@ -62,6 +82,24 @@ source .venv/bin/activate
 pip install -e .
 djsync init
 ```
+
+### Anthropic API key (for the research agent)
+
+The research agent uses the Claude API. Create a key at
+<https://console.anthropic.com/>, then add it to your shell profile:
+
+```bash
+echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.zshrc && source ~/.zshrc
+```
+
+Or run `ant auth login` if you have Anthropic's `ant` command-line tool installed.
+
+**Cost:** each track uses one Claude request with up to five web searches,
+roughly **$0.05-0.15 per track**. Searches are billed at $10 per 1,000, and the
+model at $4/$20 per million input/output tokens with the default
+`claude-opus-5-5`. Set `effort = "low"` under `[agent]` to make it cheaper, or
+`auto = false` to research only when you click. Without a key, djsync still
+works; it just shows the plain search links.
 
 ### Spotify app (one time)
 
@@ -95,6 +133,7 @@ All the steps can be done from the review page. Or use the command line:
 
 ```bash
 djsync scan              # list liked songs that aren't in rekordbox
+djsync research          # find the best place to buy each approved track (--again to redo)
 djsync import --dry-run  # show which downloaded files match approved tracks
 djsync import            # import them into today's djsync-downloads-<date> playlist
 djsync import --watch    # keep checking every 30s until all approved tracks arrive
@@ -141,6 +180,12 @@ move_files = true            # false = copy instead of move
 [match]
 threshold = 88               # 0-100; raise it if wrong tracks match, lower it if owned tracks still show up
 file_threshold = 75          # 0-100; lower it if downloaded files aren't found, raise it if the wrong file is picked
+
+[agent]
+enabled = true               # the research agent
+auto = true                  # research tracks as soon as you approve them
+model = "claude-opus-5-5"
+effort = "medium"            # low | medium | high
 
 [stores]
 enabled = ["beatport", "bandcamp", "deezer"]   # also: "itunes", "amazon"

@@ -31,6 +31,16 @@ class Track:
     import_method: str = ""   # "db" = written into rekordbox, "xml" = XML file to import
     xml_path: str = ""
     imported_at: str = ""
+    # Research agent results
+    buy_store: str = ""        # store domain, e.g. "beatport.com", or "deezer"
+    buy_store_name: str = ""   # "Beatport", "Bandcamp", ...
+    buy_url: str = ""
+    buy_label: str = ""
+    buy_confidence: str = ""
+    buy_note: str = ""
+    deezer_url: str = ""
+    research_error: str = ""
+    researched_at: str = ""
 
 
 @dataclass
