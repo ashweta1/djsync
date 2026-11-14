@@ -41,7 +41,7 @@ and djsync finds the files in your downloads folder and imports them.
 You need Python 3.11 or later (`brew install python`).
 
 ```bash
-git clone https://github.com/<you>/djsync.git
+git clone https://github.com/ashweta1/djsync.git
 cd djsync
 python3 -m venv .venv
 source .venv/bin/activate
