@@ -141,7 +141,8 @@ def create_app(cfg: Config) -> Flask:
         playlists = list(groups.values())
         pending, approved = st.by_status(PENDING), st.by_status(APPROVED)
         ready = [t for t in approved if t.id in found]
-        to_buy = [t for t in approved if t.id not in found]
+        # Still to buy first, then the ones you've bought (waiting for the download).
+        to_buy = sorted((t for t in approved if t.id not in found), key=lambda t: t.bought)
         skipped, in_rb = st.by_status(SKIPPED), st.by_status(IN_REKORDBOX)
         names = {p["id"]: p["name"] for p in st.playlists}
         chosen = [("Liked Songs" if s == "liked" else names.get(s)) for s in st.sources]
@@ -311,6 +312,18 @@ def create_app(cfg: Config) -> Flask:
                 flash("Couldn't open Finder.", "err")
         return back()
 
+    @app.post("/bought/<track_id>")
+    def bought(track_id: str):
+        """Mark (or unmark) a Buy card as bought: it dims and waits for the download."""
+        with lock:
+            st = state()
+            t = st.tracks.get(track_id)
+            if not t:
+                return "unknown track", 404
+            t.bought = not t.bought
+            st.save()
+        return back([track_id])
+
     @app.post("/detach/<track_id>")
     def detach(track_id: str):
         with lock:
@@ -329,6 +342,7 @@ def create_app(cfg: Config) -> Flask:
             st.set_status([track_id], status)
             if status != APPROVED and track_id in st.tracks:
                 st.tracks[track_id].file = ""
+                st.tracks[track_id].bought = False
             st.save()
         if status == APPROVED and cfg.agent_enabled and cfg.agent_auto:
             start_research([track_id])

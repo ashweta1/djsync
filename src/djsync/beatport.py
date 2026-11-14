@@ -47,6 +47,12 @@ class Candidate:
     key: str = ""
     isrc: str = ""
 
+    def meta(self) -> str:
+        """Short details for the card: 'Ninja Tune · 2017-01-13 · 4:29 · 130 BPM · E Minor'."""
+        bits = [self.label, self.released[:10], self.length,
+                f"{self.bpm} BPM" if self.bpm else "", self.key]
+        return " · ".join(b for b in bits if b)
+
     def describe(self) -> str:
         bits = [f"{self.artists} - {self.title}" + (f" ({self.mix})" if self.mix else "")]
         for name, v in (("remixers", self.remixers), ("label", self.label), ("release", self.release),

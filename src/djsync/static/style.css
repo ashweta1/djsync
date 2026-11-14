@@ -633,3 +633,65 @@ details.menu summary.btn::after { content: " ▾"; }
 .chev { flex: none; width: 14px; color: var(--muted); font-size: 11px; text-align: center; }
 .chev::before { content: "▸"; }
 details.pl[open] .chev::before { content: "▾"; }
+
+/* ---------- Buy gets the room: it's where most of the time goes ---------- */
+.board { grid-template-columns: minmax(250px, 0.9fr) minmax(380px, 1.9fr) minmax(250px, 0.9fr) minmax(230px, 0.8fr); }
+@media (max-width: 1180px) {
+  .board { grid-template-columns: repeat(2, minmax(270px, 1fr)); }
+  .board > .col:nth-child(2) { grid-row: span 2; }   /* Buy runs the full height on the left/right */
+}
+@media (max-width: 700px) { .board > .col:nth-child(2) { flex-basis: 92vw; } }
+
+.card.buy .art { width: 52px; height: 52px; }
+.card.buy .t { font-size: 15px; }
+
+/* details of the pick and other versions */
+.meta-line { font: 11.5px/1.4 ui-monospace, Menlo, monospace; color: var(--muted); margin-top: -4px; }
+.alts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.alts-label { font-size: 11.5px; color: var(--muted); margin-right: 2px; }
+.alt {
+  font-size: 11.5px; font-weight: 600; text-decoration: none; padding: 1px 7px; border-radius: 6px;
+  color: var(--sc); border: 1px solid color-mix(in srgb, var(--sc) 35%, transparent); background: transparent;
+}
+.alt:hover { background: color-mix(in srgb, var(--sc) 15%, transparent); text-decoration: none; }
+
+/* bought: dimmed, waiting for the file */
+.ic.ok.on { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); }
+.card.bought { opacity: 0.62; border-style: dashed; }
+.card.bought:hover { opacity: 1; }
+.bought-line { font-size: 12px; font-weight: 600; color: var(--accent-2); margin-top: -2px; }
+
+/* ---------- click a column header to make that column the wide one ---------- */
+.col-head { cursor: pointer; }
+.col-head:hover h2 { color: var(--accent-2); }
+@media (min-width: 1181px) {
+  .board { transition: grid-template-columns 0.35s ease; }
+  .board[data-focus="scan"]      { grid-template-columns: minmax(380px, 1.9fr) minmax(240px, 0.8fr) minmax(220px, 0.75fr) minmax(220px, 0.7fr); }
+  .board[data-focus="buy"]       { grid-template-columns: minmax(240px, 0.8fr) minmax(380px, 1.9fr) minmax(220px, 0.75fr) minmax(220px, 0.7fr); }
+  .board[data-focus="import"]    { grid-template-columns: minmax(220px, 0.75fr) minmax(240px, 0.8fr) minmax(380px, 1.9fr) minmax(220px, 0.7fr); }
+  .board[data-focus="playlists"] { grid-template-columns: minmax(220px, 0.75fr) minmax(240px, 0.8fr) minmax(220px, 0.7fr) minmax(380px, 1.9fr); }
+  .board .col { box-shadow: none; transition: border-color 0.2s; }
+  .board[data-focus="scan"] .col[data-col="scan"],
+  .board[data-focus="buy"] .col[data-col="buy"],
+  .board[data-focus="import"] .col[data-col="import"],
+  .board[data-focus="playlists"] .col[data-col="playlists"] { border-color: var(--line-2); }
+}
+
+/* ---------- narrow columns adapt to their width ---------- */
+.col { container: col / inline-size; }
+@container col (max-width: 320px) {
+  .col-foot .foot-btns { flex-direction: column; width: 100%; margin-left: 0; }
+  .col-foot .foot-btns .btn { width: 100%; justify-content: center; }
+  .col-body .pl-head .pill { font-size: 0; width: 9px; height: 9px; padding: 0; border-radius: 50%; background: var(--muted); }
+  .col-body .pl-head .pill.ok { background: var(--accent); }
+  .col-body .pl-head .pill.warn { background: var(--warn); }
+  .col-body .pl-head .a { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .filepath { font-size: 10.5px; }
+  .card-top .main .t { font-size: 13.5px; }
+}
+@container col (max-width: 320px) {
+  .col-head.has-btn { grid-template-columns: auto 1fr auto; }
+  .col-head.has-btn .head-btn { grid-column: 1 / 4; grid-row: 3; justify-self: start; margin-top: 6px; }
+  .col-head.has-btn .col-sub { grid-column: 2 / 4; }
+}
+.card-foot { flex-wrap: wrap; row-gap: 6px; }

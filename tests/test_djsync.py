@@ -1311,3 +1311,60 @@ def test_buy_and_import_cards_have_quick_buttons(cfg):
     client = create_app(cfg).test_client()
     client.post("/move/2/skipped")
     assert State.load(cfg.state_path).tracks["2"].status == SKIPPED
+
+
+# --- Buy column: details, other versions, bought marker -----------------------------------
+
+def test_research_keeps_pick_details_and_other_versions():
+    t = Track(id="1", artist="Whoja Vu", title="Jiya Jale")
+    ext = "https://www.beatport.com/track/jiya-jale/20817460"
+    client = FakeClaude(_resp(_answer(url=ext, title="Jiya Jale", mix="Extended Mix", artists="Whoja Vu"), []))
+    f = research.research(Config(), t, client, opener=_page_opener(_next_page(SEARCH_STYLE)))
+    assert f.url == ext
+    assert [a["label"] for a in f.alts] == ["Original Mix"]        # the version not picked
+    assert f.alts[0]["url"].endswith("/20817455")
+    assert "Malaal Records" in f.alts[0]["meta"] and "122 BPM" in f.alts[0]["meta"]
+
+
+def test_research_isrc_pick_has_details():
+    t = Track(id="1", artist="Bicep", title="Glue", isrc="GBCFB1700200")
+    f = research.research(Config(), t, FakeClaude(), opener=_page_opener(_next_page(CATALOG_STYLE)))
+    assert f.meta == "Ninja Tune · 4:29 · 130 BPM · E Minor" and f.alts == []
+
+
+def test_buy_card_shows_details_alts_and_bought(cfg):
+    from djsync.web import create_app
+    st = State(path=cfg.state_path)
+    st.tracks["1"] = Track(id="1", artist="Whoja Vu", title="Jiya Jale", status=APPROVED)
+    research.apply(st.tracks["1"], research.Finding(
+        store="beatport.com", store_name="Beatport", url="https://www.beatport.com/track/jiya-jale/2",
+        label="Jiya Jale (Extended Mix) - Whoja Vu", confidence="high", meta="Malaal · 2026-04-03 · 6:40 · 122 BPM",
+        alts=[{"url": "https://www.beatport.com/track/jiya-jale/1", "label": "Original Mix", "meta": "x"}]))
+    st.tracks["2"] = Track(id="2", artist="Bicep", title="Glue", status=APPROVED)
+    st.save()
+    client = create_app(cfg).test_client()
+    html = client.get("/").get_data(as_text=True)
+    card = html.split('class="card buy')[1].split("</article>")[0]
+    assert "Malaal · 2026-04-03 · 6:40 · 122 BPM" in card
+    assert "Other versions" in card and "Original Mix ↗" in card
+    assert html.split('id="c-buy"')[1].split("</header>")[0].count(">2<") == 1   # 2 to buy
+
+    # ✓ marks it bought: dimmed, sorted after the rest, counted separately
+    r = client.post("/bought/1")
+    assert r.headers["Location"].endswith("/?hl=1")
+    assert State.load(cfg.state_path).tracks["1"].bought
+    html = client.get("/").get_data(as_text=True)
+    buy = html.split('id="c-buy"')[1].split('id="c-import"')[0]
+    assert buy.index("Glue") < buy.index("Jiya Jale")                  # still-to-buy first
+    assert "1 bought, waiting for the download" in buy and "Bought · waiting for the download" in buy
+    client.post("/bought/1")                                           # ✓ again: undo
+    assert not State.load(cfg.state_path).tracks["1"].bought
+
+
+def test_bought_flag_cleared_when_skipped(cfg):
+    from djsync.web import create_app
+    _approved(cfg, ("Bicep", "Glue"))
+    client = create_app(cfg).test_client()
+    client.post("/bought/1")
+    client.post("/move/1/skipped")
+    assert not State.load(cfg.state_path).tracks["1"].bought

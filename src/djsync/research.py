@@ -29,7 +29,7 @@ import subprocess
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from .config import Config
@@ -134,6 +134,8 @@ class Finding:
     note: str = ""
     deezer_url: str = ""
     error: str = ""
+    meta: str = ""         # details of the Beatport pick: label · date · length · BPM · key
+    alts: list = field(default_factory=list)  # other Beatport versions: [{url, label, meta}]
 
 
 def _describe(t: Track, cands=None) -> str:
@@ -381,6 +383,24 @@ def _take(f: Finding, c, confidence: str, note: str, t: Track) -> Finding:
     return f
 
 
+def _beatport_id(url: str):
+    m = BEATPORT_PAGE.match(_norm_url(url or ""))
+    return m.groups() if m else None
+
+
+def _enrich(f: Finding, t: Track, cands) -> None:
+    """Add the Beatport pick's details and the other versions Beatport listed."""
+    if not cands:
+        return
+    picked = _beatport_id(f.url) if f.store == "beatport.com" else None
+    for c in cands:
+        if picked and _beatport_id(c.url) == picked:
+            f.meta = c.meta()
+    others = [c for c in _by_name(t, cands) if _beatport_id(c.url) != picked]
+    f.alts = [{"url": _norm_url(c.url), "label": c.mix or c.title, "meta": c.meta()}
+              for c in others[:4]]
+
+
 def research(cfg: Config, t: Track, client=None, opener=urllib.request.urlopen) -> Finding:
     f = Finding()
 
@@ -397,6 +417,7 @@ def research(cfg: Config, t: Track, client=None, opener=urllib.request.urlopen) 
                 # Same recording (ISRC) on Beatport: no need to ask Claude.
                 _take(f, same[0], "high", "Same recording as on Spotify (matching ISRC), found "
                       "with Beatport's own search.", t)
+                _enrich(f, t, cands)
                 f.deezer_url = deezer_link(t, opener)
                 return f
 
@@ -439,6 +460,7 @@ def research(cfg: Config, t: Track, client=None, opener=urllib.request.urlopen) 
     elif not answer and not f.error and not f.store:
         f.error = "The store search didn't return an answer."
 
+    _enrich(f, t, cands)
     f.deezer_url = deezer_link(t, opener)
     if not f.store and f.deezer_url:
         f.store, f.store_name, f.url = "deezer", "Deezer", f.deezer_url
@@ -450,6 +472,7 @@ def apply(t: Track, f: Finding) -> None:
     t.buy_store, t.buy_store_name, t.buy_url, t.buy_label = f.store, f.store_name, f.url, f.label
     t.buy_confidence, t.buy_note, t.deezer_url = f.confidence, f.note, f.deezer_url
     t.research_error = f.error
+    t.buy_meta, t.buy_alts = f.meta, list(f.alts)
     t.researched_at = datetime.now().isoformat(timespec="seconds")
 
 

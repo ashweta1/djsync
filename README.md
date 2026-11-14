@@ -23,6 +23,14 @@ moves from left to right:
 |---|---|---|---|
 | New tracks from Spotify that aren't in rekordbox. **✓** approves a card and **✕** skips it. You can also tick several, then **Approve selected** or **Skip unselected**. | Approved tracks, each with the best place to buy it. | Tracks whose file has turned up in Downloads or Music. **Import** adds them to rekordbox. | Each day's `djsync-downloads-<date>` playlist and its tracks. |
 
+**Buy** is the widest column by default, since that's where most of the time
+goes. Click any column's header to make that column the wide one instead;
+djsync remembers your choice. Each Buy card shows the agent's pick with its
+label, release date, length, BPM and key, plus links to the other versions
+Beatport has, such as Original, Extended or remixes. After buying a track,
+click **✓** on its card: it dims and says *Bought, waiting for the download*
+until the file arrives and the card moves to Import.
+
 A card that just moved is highlighted in its new column. Skipped tracks, and
 ones that reached rekordbox some other way, are under **Archive** in the
 header. On a phone, swipe between the columns.

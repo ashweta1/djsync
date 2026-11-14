@@ -41,6 +41,9 @@ class Track:
     buy_note: str = ""
     deezer_url: str = ""
     research_error: str = ""
+    buy_meta: str = ""          # label · date · length · BPM · key of the Beatport pick
+    buy_alts: list = field(default_factory=list)  # other Beatport versions [{url, label, meta}]
+    bought: bool = False        # you marked it bought; waiting for the download
     researched_at: str = ""
 
 

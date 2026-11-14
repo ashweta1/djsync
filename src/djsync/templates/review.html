@@ -15,10 +15,11 @@
 
 {% block content %}
 {% if view == "board" %}
-<div class="board">
+<div class="board" data-focus="buy">
+  <script>try { const f = localStorage.getItem('djsync-focus'); if (f) document.currentScript.parentElement.dataset.focus = f; } catch (e) {}</script>
 
   {# ============================================================ 1. Scan #}
-  <section class="col" aria-labelledby="c-scan">
+  <section class="col" data-col="scan" aria-labelledby="c-scan">
     <header class="col-head has-btn">
       <span class="num" aria-hidden="true">1</span>
       <h2 id="c-scan">Scan</h2>
@@ -108,12 +109,13 @@
   </section>
 
   {# ============================================================ 2. Buy #}
-  <section class="col" aria-labelledby="c-buy">
+  <section class="col" data-col="buy" aria-labelledby="c-buy">
     <header class="col-head">
       <span class="num" aria-hidden="true">2</span>
+      {% set n_bought = to_buy|selectattr("bought")|list|length %}
       <h2 id="c-buy">Buy</h2>
-      <b class="badge">{{ to_buy|length }}</b>
-      <span class="col-sub">Approved, waiting for the file</span>
+      <b class="badge" title="Still to buy">{{ to_buy|length - n_bought }}</b>
+      <span class="col-sub">Approved tracks to buy{% if n_bought %} · {{ n_bought }} bought, waiting for the download{% endif %}</span>
     </header>
     {% if to_buy %}
     <div class="col-tools">
@@ -131,7 +133,7 @@
     <div class="col-body">
       {% for t in to_buy %}
       {% set confident_bp = t.buy_store == "beatport.com" and t.buy_confidence != "low" %}
-      <article class="card buy {% if t.id in hl %}arrive{% endif %}">
+      <article class="card buy{% if t.bought %} bought{% endif %}{% if t.id in hl %} arrive{% endif %}">
         <div class="card-top">
           {{ art(t, 44) }}
           <div class="main">
@@ -139,11 +141,17 @@
             <div class="a" title="{{ t.artist }}">{{ t.artist }}</div>
           </div>
           <div class="quick">
+            <form method="post" action="{{ url_for('bought', track_id=t.id) }}">
+              <button class="ic ok {% if t.bought %}on{% endif %}" aria-pressed="{{ 'true' if t.bought else 'false' }}"
+                      title="{% if t.bought %}Not bought yet{% else %}Mark as bought{% endif %}"
+                      aria-label="{% if t.bought %}Unmark{% else %}Mark{% endif %} {{ t.title }} as bought">✓</button>
+            </form>
             <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}">
               <button class="ic no" title="Skip: move to Archive" aria-label="Skip {{ t.title }}">✕</button>
             </form>
           </div>
         </div>
+        {% if t.bought %}<div class="bought-line">Bought · waiting for the download</div>{% endif %}
 
         {% if t.id in researching %}
         <div class="pick-line busy"><span class="spin" aria-hidden="true"></span>Finding the best place to buy…</div>
@@ -159,12 +167,19 @@
           {% if t.buy_confidence %}<span class="conf {{ t.buy_confidence }}" title="How sure the agent is that this is the same version">{{ t.buy_confidence }}</span>{% endif %}
           {% endif %}
         </div>
+        {% if t.buy_meta and t.buy_store == "beatport.com" %}<div class="meta-line">{{ t.buy_meta }}</div>{% endif %}
         {% if t.research_error %}<p class="note warn">⚠ {{ t.research_error }}</p>
         {% elif t.buy_note %}<p class="note clamp" title="{{ t.buy_note }}">{{ t.buy_note }}</p>{% endif %}
         {% elif t.researched_at %}
         <p class="note warn">{% if t.research_error %}⚠ {{ t.research_error }}{% else %}Not found in any store or on Deezer.{% endif %}</p>
         {% endif %}
 
+        {% if t.buy_alts and t.id not in researching %}
+        <div class="alts">
+          <span class="alts-label">{% if t.buy_store == "beatport.com" %}Other versions{% else %}On Beatport{% endif %}</span>
+          {% for a in t.buy_alts %}<a class="alt store-beatport-com" href="{{ a.url }}" target="_blank" rel="noopener" title="{{ a.meta }}">{{ a.label }} ↗</a>{% endfor %}
+        </div>
+        {% endif %}
         <div class="card-foot">
           {% if agent_enabled and t.id not in researching %}
           <form method="post" action="{{ url_for('research_route') }}" class="inline"><button class="btn sm" name="id" value="{{ t.id }}"
@@ -193,7 +208,7 @@
   </section>
 
   {# ============================================================ 3. Import #}
-  <section class="col" aria-labelledby="c-import">
+  <section class="col" data-col="import" aria-labelledby="c-import">
     <header class="col-head">
       <span class="num" aria-hidden="true">3</span>
       <h2 id="c-import">Import</h2>
@@ -252,7 +267,7 @@
   </section>
 
   {# ============================================================ 4. Playlists #}
-  <section class="col" aria-labelledby="c-pl">
+  <section class="col" data-col="playlists" aria-labelledby="c-pl">
     <header class="col-head">
       <span class="num" aria-hidden="true">4</span>
       <h2 id="c-pl">Playlists</h2>
@@ -273,7 +288,7 @@
             <div class="t" title="{{ g.name }}">{{ g.name }}</div>
             <div class="a">{{ g.tracks|length }} track{{ "s" if g.tracks|length != 1 }}{% if g.at %} · {{ g.at|ago }}{% endif %}</div>
           </div>
-          {% if g.method == "db" %}<span class="pill ok">In rekordbox</span>
+          {% if g.method == "db" %}<span class="pill ok" title="In rekordbox">In rekordbox</span>
           {% elif g.method == "xml" %}<span class="pill warn" title="{{ g.pending }} of {{ g.tracks|length }} tracks not in rekordbox yet">Not in rekordbox yet</span>
           {% else %}<span class="pill" title="Imported before djsync recorded how">Status unknown</span>{% endif %}
           <span class="chev" aria-hidden="true"></span>
@@ -358,6 +373,16 @@
 
 {% block scripts %}
 <script>
+  // Click a column's header (not its buttons) to make that column the wide one.
+  document.querySelectorAll('.col-head').forEach(h => {
+    h.title = h.title || 'Click to widen this column';
+    h.addEventListener('click', e => {
+      if (e.target.closest('button, a, input, form, summary, label')) return;
+      const board = h.closest('.board'), col = h.closest('.col').dataset.col;
+      board.dataset.focus = col;
+      try { localStorage.setItem('djsync-focus', col); } catch (err) {}
+    });
+  });
   function togglePanel(btn) {
     const panel = document.getElementById('src-panel');
     panel.hidden = !panel.hidden;
