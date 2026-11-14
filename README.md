@@ -190,7 +190,7 @@ file_threshold = 75          # 0-100; lower it if downloaded files aren't found,
 
 [agent]
 backend = "auto"             # "claude-code" (your Claude plan), "api" (API key), or auto
-claude_code_model = ""       # Claude Code only: "" = its default, or "sonnet" / "haiku"
+claude_code_model = "sonnet" # Claude Code only: "sonnet", "haiku", "opus", or "" for its default
 enabled = true               # the research agent
 auto = true                  # research tracks as soon as you approve them
 model = "claude-opus-5-5"     # API only

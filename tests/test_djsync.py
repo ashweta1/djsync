@@ -815,3 +815,17 @@ def test_backend_auto(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     assert research.backend(Config()) == "api"
     assert research.backend(Config(agent_backend="claude-code")) == "claude-code"
+
+
+def test_claude_code_uses_sonnet_by_default(tmp_path):
+    from djsync import config as cfgmod
+    assert Config().claude_code_model == "sonnet"
+    p = tmp_path / "config.toml"
+    p.write_text("[agent]\nbackend = 'claude-code'\n")
+    assert cfgmod.load(p).claude_code_model == "sonnet"
+    p.write_text("[agent]\nclaude_code_model = 'haiku'\n")
+    assert cfgmod.load(p).claude_code_model == "haiku"
+    url = "https://www.beatport.com/track/-/1"
+    run = FakeRun(_cc_output(_answer(url=url), [url]))
+    research.ask_claude_code(Config(home=tmp_path), GLUE, run=run)
+    assert run.cmd[run.cmd.index("--model") + 1] == "sonnet"

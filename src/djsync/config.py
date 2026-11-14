@@ -57,8 +57,9 @@ enabled = ["beatport", "bandcamp", "deezer"]
 #   backend = "api":         uses the Claude API with ANTHROPIC_API_KEY (pay per use).
 #   backend = "auto":        Claude Code if installed, else the API.
 backend = "auto"
-# Claude Code only: model to use ("" = Claude Code's default, or e.g. "sonnet", "haiku").
-claude_code_model = ""
+# Claude Code only: model to use - "sonnet" (default), "haiku" (lighter on your
+# plan's allowance), "opus" (most thorough), or "" for Claude Code's own default.
+claude_code_model = "sonnet"
 enabled = true
 # Research tracks automatically as soon as you approve them.
 auto = true
@@ -93,7 +94,7 @@ class Config:
     agent_model: str = "claude-opus-5-5"
     agent_effort: str = "medium"
     agent_backend: str = "auto"
-    claude_code_model: str = ""
+    claude_code_model: str = "sonnet"
     claude_path: str = ""
     home: Path = HOME
 
@@ -149,6 +150,6 @@ def load(path: Path = CONFIG_PATH) -> Config:
     cfg.agent_backend = ag.get("backend", "auto")
     if cfg.agent_backend not in ("auto", "claude-code", "api"):
         raise ValueError('[agent] backend must be "auto", "claude-code" or "api"')
-    cfg.claude_code_model = ag.get("claude_code_model", "")
+    cfg.claude_code_model = ag.get("claude_code_model", "sonnet")
     cfg.claude_path = ag.get("claude_path", "")
     return cfg
