@@ -83,23 +83,30 @@ pip install -e .
 djsync init
 ```
 
-### Anthropic API key (for the research agent)
+### Research agent: use your Claude plan (recommended)
 
-The research agent uses the Claude API. Create a key at
-<https://console.anthropic.com/>, then add it to your shell profile:
+The research agent runs on **Claude Code**, which comes with Claude Pro and Max.
+So it uses your plan's allowance, with no API key and no per-track charge.
 
-```bash
-echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.zshrc && source ~/.zshrc
-```
+1. Install Claude Code from <https://claude.com/claude-code>.
+2. Run `claude` once in Terminal and sign in with your Claude account, then quit it.
 
-Or run `ant auth login` if you have Anthropic's `ant` command-line tool installed.
+That's it. djsync runs `claude -p` for each track in the background, with only
+the web search tool switched on. Each track takes 20–40 seconds, and djsync
+researches two at a time.
 
-**Cost:** each track uses one Claude request with up to five web searches,
-roughly **$0.05-0.15 per track**. Searches are billed at $10 per 1,000, and the
-model at $4/$20 per million input/output tokens with the default
-`claude-opus-5-5`. Set `effort = "low"` under `[agent]` to make it cheaper, or
-`auto = false` to research only when you click. Without a key, djsync still
-works; it just shows the plain search links.
+The searches count towards the same usage limit as your claude.ai chats and
+Claude Code, which resets every few hours. If you approve a big batch and hit
+the limit, the tracks it couldn't do say so. Click **Research again** later.
+
+**Alternative: Claude API key (pay per use).** Set `backend = "api"` under
+`[agent]` and export `ANTHROPIC_API_KEY` (create one at
+<https://console.anthropic.com/>). That's faster and runs more tracks in
+parallel, but each track is billed: a few cents with the default
+`claude-opus-5-5` model, mostly for the web searches and for reading their
+results.
+
+Without either, djsync still works; it just shows the plain search links.
 
 ### Spotify app (one time)
 
@@ -182,10 +189,12 @@ threshold = 88               # 0-100; raise it if wrong tracks match, lower it i
 file_threshold = 75          # 0-100; lower it if downloaded files aren't found, raise it if the wrong file is picked
 
 [agent]
+backend = "auto"             # "claude-code" (your Claude plan), "api" (API key), or auto
+claude_code_model = ""       # Claude Code only: "" = its default, or "sonnet" / "haiku"
 enabled = true               # the research agent
 auto = true                  # research tracks as soon as you approve them
-model = "claude-opus-5-5"
-effort = "medium"            # low | medium | high
+model = "claude-opus-5-5"     # API only
+effort = "medium"            # API only: low | medium | high
 
 [stores]
 enabled = ["beatport", "bandcamp", "deezer"]   # also: "itunes", "amazon"

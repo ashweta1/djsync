@@ -744,3 +744,74 @@ def test_ago_and_hue_filters():
     assert 0 <= env.filters["hue"]("Bicep Glue") < 360
     assert env.filters["initial"]("(It Goes Like) Nanana") == "I"
     assert env.filters["initial"]("...") == "♪"
+
+
+# --- Claude Code backend (uses your Claude plan) ---------------------------------------
+
+def _cc_output(answer, result_text_urls, *, is_error=False, subtype="success", result_msg=None):
+    links = _json.dumps([{"title": "x", "url": u} for u in result_text_urls])
+    lines = [
+        {"type": "system", "subtype": "init"},
+        {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "WebSearch", "input": {"query": "q"}}]}},
+        {"type": "user", "message": {"content": [{"type": "tool_result", "content": f'Web search results for query: "q"\n\nLinks: {links}'}]}},
+        {"type": "result", "subtype": subtype, "is_error": is_error,
+         "result": result_msg if result_msg is not None else _json.dumps(answer),
+         **({"structured_output": answer} if answer is not None else {})},
+    ]
+    return "\n".join(_json.dumps(l) for l in lines)
+
+
+class FakeRun:
+    def __init__(self, stdout="", stderr="", exc=None):
+        self.stdout, self.stderr, self.exc, self.cmd = stdout, stderr, exc, None
+
+    def __call__(self, cmd, **kw):
+        self.cmd, self.kw = cmd, kw
+        if self.exc:
+            raise self.exc
+        return NS(stdout=self.stdout, stderr=self.stderr, returncode=0)
+
+
+def test_claude_code_backend_finds_beatport_link(tmp_path):
+    cfg = Config(home=tmp_path, agent_backend="claude-code")
+    url = "https://www.beatport.com/track/-/20817455"
+    run = FakeRun(_cc_output(_answer(url=url), [url, "https://www.mixgraph.io/tracks/bicep-glue"]))
+    answer, seen = research.ask_claude_code(cfg, GLUE, run=run)
+    assert answer["url"] == url and url in seen
+    cmd = run.cmd
+    assert cmd[1] == "-p" and "GBCFB1700200" in cmd[2]
+    assert cmd[cmd.index("--tools") + 1] == "WebSearch"
+    assert "--json-schema" in cmd and "--no-session-persistence" in cmd
+    assert run.kw["cwd"] == str(tmp_path)  # not inside some project folder
+
+
+def test_claude_code_link_must_be_in_its_search_results(tmp_path, monkeypatch):
+    cfg = Config(home=tmp_path, agent_backend="claude-code")
+    run = FakeRun(_cc_output(_answer(url="https://www.beatport.com/track/glue/999"), [BP]))
+    real = research.ask_claude_code
+    monkeypatch.setattr(research, "ask_claude_code", lambda c, t: real(c, t, run=run))
+    f = research.research(cfg, GLUE, opener=_no_deezer)  # no client -> Claude Code backend
+    assert f.url == "" and "ignored" in f.note
+
+
+def test_claude_code_usage_limit_is_explained(tmp_path):
+    cfg = Config(home=tmp_path, agent_backend="claude-code")
+    run = FakeRun(_cc_output(None, [], is_error=True, subtype="error_during_execution",
+                             result_msg="Claude usage limit reached. Your limit will reset at 5pm."))
+    with pytest.raises(RuntimeError, match="usage limit reached; try again later"):
+        research.ask_claude_code(cfg, GLUE, run=run)
+
+
+def test_claude_code_not_installed(tmp_path):
+    cfg = Config(home=tmp_path, agent_backend="claude-code")
+    with pytest.raises(RuntimeError, match="isn't installed"):
+        research.ask_claude_code(cfg, GLUE, run=FakeRun(exc=FileNotFoundError()))
+
+
+def test_backend_auto(monkeypatch):
+    monkeypatch.setattr(research.shutil, "which", lambda name: "/usr/local/bin/claude")
+    assert research.backend(Config()) == "claude-code"
+    monkeypatch.setattr(research.shutil, "which", lambda name: None)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    assert research.backend(Config()) == "api"
+    assert research.backend(Config(agent_backend="claude-code")) == "claude-code"

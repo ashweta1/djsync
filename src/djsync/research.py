@@ -12,14 +12,20 @@ Every link must have appeared in the search results and be on a known store
 is looked up with Deezer's public API (by ISRC, then artist + title), so there's
 always somewhere to listen and check.
 
-Needs Anthropic API credentials: ANTHROPIC_API_KEY, or a profile from
-`ant auth login`.
+Two ways to run it (`[agent] backend` in the config):
+  * "claude-code" - runs the `claude` command (Claude Code) on this Mac, so it uses
+    your Claude Pro/Max plan's allowance. No API key needed.
+  * "api"         - calls the Claude API directly with ANTHROPIC_API_KEY (pay per use).
+  * "auto"        - Claude Code if it's installed, else the API.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import subprocess
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -217,6 +223,77 @@ def ask_claude(cfg: Config, t: Track, client=None) -> tuple[dict | None, set[str
     return _final_json(content), seen
 
 
+_URL = re.compile(r"https?://[^\s\"'<>)\]]+")
+
+
+def backend(cfg: Config) -> str:
+    if cfg.agent_backend in ("api", "claude-code"):
+        return cfg.agent_backend
+    if shutil.which(cfg.claude_path or "claude"):
+        return "claude-code"
+    return "api" if os.environ.get("ANTHROPIC_API_KEY") else "claude-code"
+
+
+def ask_claude_code(cfg: Config, t: Track, run=subprocess.run) -> tuple[dict | None, set[str]]:
+    """Same search, run through Claude Code (`claude -p`) on your Claude plan."""
+    exe = shutil.which(cfg.claude_path or "claude") or cfg.claude_path or "claude"
+    cmd = [
+        exe, "-p", _describe(t) + "\n\nUse the web search tool, then give your answer.",
+        "--append-system-prompt", SYSTEM,
+        "--tools", "WebSearch", "--allowedTools", "WebSearch",
+        "--output-format", "stream-json", "--verbose",
+        "--no-session-persistence",
+        "--json-schema", json.dumps(RESULT_SCHEMA),
+    ]
+    if cfg.claude_code_model:
+        cmd += ["--model", cfg.claude_code_model]
+    cfg.home.mkdir(parents=True, exist_ok=True)
+    try:
+        # Run from djsync's own folder so no project's CLAUDE.md or settings get loaded.
+        proc = run(cmd, capture_output=True, text=True, timeout=300, cwd=str(cfg.home))
+    except FileNotFoundError:
+        raise RuntimeError("Claude Code isn't installed. Install it from https://claude.com/claude-code "
+                           "and sign in with `claude`, or set backend = \"api\" with an API key.")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Claude Code took more than 5 minutes; try again.")
+
+    seen: set[str] = set()
+    result = None
+    for line in proc.stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if ev.get("type") == "result":
+            result = ev
+        elif ev.get("type") == "user":
+            content = (ev.get("message") or {}).get("content")
+            for block in content if isinstance(content, list) else []:
+                if block.get("type") != "tool_result":
+                    continue
+                c = block.get("content")
+                text = c if isinstance(c, str) else json.dumps(c)
+                seen |= {_norm_url(u) for u in _URL.findall(text)}
+    if result is None:
+        err = (proc.stderr or proc.stdout or "").strip().splitlines()
+        raise RuntimeError("Claude Code didn't return a result" + (f": {err[-1]}" if err else "."))
+    if result.get("is_error") or result.get("subtype") != "success":
+        msg = str(result.get("result") or result.get("subtype") or "unknown error")
+        if "limit" in msg.lower():
+            msg = f"Claude plan usage limit reached; try again later. ({msg})"
+        raise RuntimeError(f"Claude Code: {msg}")
+    answer = result.get("structured_output")
+    if not isinstance(answer, dict):
+        answer = _final_json([type("B", (), {"type": "text", "text": result.get("result") or ""})()])
+    return answer, seen
+
+
+def ask(cfg: Config, t: Track, client=None) -> tuple[dict | None, set[str]]:
+    if client is None and backend(cfg) == "claude-code":
+        return ask_claude_code(cfg, t)
+    return ask_claude(cfg, t, client)
+
+
 def deezer_link(t: Track, opener=urllib.request.urlopen) -> str:
     """Find the track on Deezer via its public API (no account needed)."""
     def get(url: str) -> dict:
@@ -243,7 +320,7 @@ def deezer_link(t: Track, opener=urllib.request.urlopen) -> str:
 def research(cfg: Config, t: Track, client=None, opener=urllib.request.urlopen) -> Finding:
     f = Finding()
     try:
-        answer, seen = ask_claude(cfg, t, client)
+        answer, seen = ask(cfg, t, client)
     except Exception as e:  # no credentials, network, API error: report, don't crash
         answer, seen = None, set()
         f.error = f"Store search failed: {e}"
@@ -282,12 +359,15 @@ def apply(t: Track, f: Finding) -> None:
     t.researched_at = datetime.now().isoformat(timespec="seconds")
 
 
-def research_many(cfg: Config, tracks: list[Track], client=None, workers: int = 4,
+def research_many(cfg: Config, tracks: list[Track], client=None, workers: int | None = None,
                   on_done=None) -> None:
     """Research several tracks in parallel. ``on_done(track, finding)`` is called for each."""
     def one(t: Track):
         f = research(cfg, t, client)
         if on_done:
             on_done(t, f)
+    if workers is None:
+        # Claude Code shares your plan's allowance: go easy on it.
+        workers = 2 if client is None and backend(cfg) == "claude-code" else 4
     with ThreadPoolExecutor(max_workers=workers) as pool:
         list(pool.map(one, tracks))

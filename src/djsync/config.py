@@ -50,13 +50,21 @@ enabled = ["beatport", "bandcamp", "deezer"]
 
 [agent]
 # The research agent searches Beatport for each approved track, picks the best
-# match and gives you a direct link (Deezer if Beatport doesn't have it).
-# Needs an Anthropic API key: set ANTHROPIC_API_KEY, or run `ant auth login`.
+# match and gives you a direct link (another store, or Deezer, if Beatport
+# doesn't have it).
+#   backend = "claude-code": uses Claude Code on this Mac, i.e. your Claude Pro/Max
+#                            plan. Install Claude Code and sign in once with `claude`.
+#   backend = "api":         uses the Claude API with ANTHROPIC_API_KEY (pay per use).
+#   backend = "auto":        Claude Code if installed, else the API.
+backend = "auto"
+# Claude Code only: model to use ("" = Claude Code's default, or e.g. "sonnet", "haiku").
+claude_code_model = ""
 enabled = true
 # Research tracks automatically as soon as you approve them.
 auto = true
+# API only:
 model = "claude-opus-5-5"
-# low | medium | high - higher is more thorough and costs more
+# API only: low | medium | high - higher is more thorough and costs more
 effort = "medium"
 
 [web]
@@ -84,6 +92,9 @@ class Config:
     agent_auto: bool = True
     agent_model: str = "claude-opus-5-5"
     agent_effort: str = "medium"
+    agent_backend: str = "auto"
+    claude_code_model: str = ""
+    claude_path: str = ""
     home: Path = HOME
 
     @property
@@ -135,4 +146,9 @@ def load(path: Path = CONFIG_PATH) -> Config:
     cfg.agent_auto = bool(ag.get("auto", True))
     cfg.agent_model = ag.get("model", cfg.agent_model)
     cfg.agent_effort = ag.get("effort", cfg.agent_effort)
+    cfg.agent_backend = ag.get("backend", "auto")
+    if cfg.agent_backend not in ("auto", "claude-code", "api"):
+        raise ValueError('[agent] backend must be "auto", "claude-code" or "api"')
+    cfg.claude_code_model = ag.get("claude_code_model", "")
+    cfg.claude_path = ag.get("claude_path", "")
     return cfg

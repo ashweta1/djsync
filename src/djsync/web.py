@@ -218,7 +218,7 @@ def create_app(cfg: Config) -> Flask:
         n = start_research(ids)
         if n:
             flash(f"Researching {n} track{'s' if n != 1 else ''}. Results appear here as they "
-                  "come in (about 20-60 seconds each, several at once).", "ok")
+                  "come in (about 20-40 seconds each).", "ok")
         return back()
 
     @app.get("/research-status")
