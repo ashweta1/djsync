@@ -144,6 +144,11 @@
             <div class="t" title="{{ t.title }}">{{ t.title }}</div>
             <div class="a" title="{{ t.artist }}">{{ t.artist }}</div>
           </div>
+          <div class="quick">
+            <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}">
+              <button class="ic no" title="Skip: move to Archive" aria-label="Skip {{ t.title }}">✕</button>
+            </form>
+          </div>
         </div>
 
         {% if t.id in researching %}
@@ -181,7 +186,6 @@
           {% if t.deezer_url and t.buy_store != "deezer" %}<a href="{{ t.deezer_url }}" target="_blank" rel="noopener">Listen on Deezer ↗</a>{% endif %}
           <a href="{{ url_for('attach_page', track_id=t.id) }}">Attach file…</a>
           <form method="post" action="{{ url_for('move', track_id=t.id, status='pending') }}"><button>Back to Scan</button></form>
-          <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}"><button class="danger">Skip</button></form>
         </div>
       </article>
       {% else %}
@@ -211,6 +215,14 @@
             <div class="t" title="{{ t.title }}">{{ t.title }}</div>
             <div class="a" title="{{ t.artist }}">{{ t.artist }}</div>
           </div>
+          <div class="quick">
+            <form method="post" action="{{ url_for('do_import') }}">
+              <button class="ic ok" name="id" value="{{ t.id }}" title="Import just this track into {{ today_playlist }}" aria-label="Import {{ t.title }}">✓</button>
+            </form>
+            <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}">
+              <button class="ic no" title="Skip: move to Archive" aria-label="Skip {{ t.title }}">✕</button>
+            </form>
+          </div>
         </div>
         <div class="file-line">
           <span class="file-state">{% if t.file %}Attached{% else %}File found{% endif %}</span>
@@ -226,7 +238,6 @@
           {% else %}
           <a href="{{ url_for('attach_page', track_id=t.id) }}">Wrong file? Pick another…</a>
           {% endif %}
-          <form method="post" action="{{ url_for('move', track_id=t.id, status='skipped') }}"><button class="danger">Skip</button></form>
         </div>
       </article>
       {% else %}

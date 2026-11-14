@@ -348,14 +348,15 @@ def create_app(cfg: Config) -> Flask:
 
     @app.post("/import")
     def do_import():
+        only = set(request.form.getlist("id")) or None  # ✓ on one card: just that track
         with lock:
             st = state()
-            r = core.do_import(cfg, st)
+            r = core.do_import(cfg, st, only=only)
         if r.error:
             flash(r.error, "err")
         if not r.method and not r.matched:
             flash(f"No approved tracks found in {where()} yet.", "err")
-        return back()
+        return back(sorted(only) if only and r.method else None)
 
     @app.post("/retry-db")
     def retry_db():

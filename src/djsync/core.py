@@ -190,9 +190,14 @@ def _place(cfg: Config, src: Path) -> Path:
     return dst
 
 
-def do_import(cfg: Config, st: State, dry_run: bool = False) -> ImportResult:
+def do_import(cfg: Config, st: State, dry_run: bool = False,
+              only: set[str] | None = None) -> ImportResult:
+    """Import matched files into today's playlist. ``only`` limits it to those track ids."""
     res = ImportResult()
     res.matched, res.waiting = match_files(cfg, st)
+    if only is not None:
+        res.waiting += [t for t, _ in res.matched if t.id not in only]
+        res.matched = [(t, p) for t, p in res.matched if t.id in only]
     if not res.matched or dry_run:
         return res
 

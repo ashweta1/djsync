@@ -1300,3 +1300,38 @@ def test_scan_summary_under_scan_title(cfg):
     assert st.last_scan_summary == "1 new, 1 problem"
     html = create_app(cfg).test_client().get("/").get_data(as_text=True)
     assert "1 new, 1 problem" in html.split('id="c-scan"')[1].split("</header>")[0]
+
+
+# --- ✓ / ✕ on Buy and Import cards ------------------------------------------------------
+
+def test_import_one_track_with_tick(cfg):
+    from djsync.web import create_app
+    _approved(cfg, ("Bicep", "Glue"), ("Peggy Gou", "Starry Night"))
+    (cfg.watch_dir / "Bicep - Glue.mp3").write_bytes(b"")
+    (cfg.watch_dir / "Peggy Gou - Starry Night.mp3").write_bytes(b"")
+    client = create_app(cfg).test_client()
+    r = client.post("/import", data={"id": "2"})          # ✓ on Starry Night only
+    assert r.headers["Location"].endswith("/?hl=2")
+    st = State.load(cfg.state_path)
+    assert st.tracks["2"].status == IMPORTED and st.tracks["1"].status == APPROVED
+    assert (cfg.watch_dir / "Bicep - Glue.mp3").exists()   # the other file wasn't touched
+    html = client.get(r.headers["Location"]).get_data(as_text=True)
+    pl = html.split('id="c-pl"')[1]
+    assert '<li class="arrive">' in pl and "Starry Night" in pl
+    imp = html.split('id="c-import"')[1].split('id="c-pl"')[0]
+    assert "Glue" in imp and "Starry Night" not in imp
+
+
+def test_buy_and_import_cards_have_quick_buttons(cfg):
+    from djsync.web import create_app
+    _approved(cfg, ("Bicep", "Glue"), ("Peggy Gou", "Starry Night"))
+    (cfg.watch_dir / "Bicep - Glue.mp3").write_bytes(b"")
+    html = create_app(cfg).test_client().get("/").get_data(as_text=True)
+    buy = html.split('class="card buy')[1].split("</article>")[0]
+    ready = html.split('class="card ready')[1].split("</article>")[0]
+    assert 'class="ic no"' in buy and 'class="ic ok"' not in buy
+    assert 'class="ic ok"' in ready and 'class="ic no"' in ready
+    assert ">Skip<" not in buy and ">Skip<" not in ready   # not repeated in the ⋯ menus
+    client = create_app(cfg).test_client()
+    client.post("/move/2/skipped")
+    assert State.load(cfg.state_path).tracks["2"].status == SKIPPED

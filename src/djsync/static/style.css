@@ -623,3 +623,7 @@ details.menu summary.btn::after { content: " ▾"; }
 .errbar .x { border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 0 4px; }
 .errbar-wrap + main .board { height: calc(100vh - 60px - 32px - 52px); }
 .text-link, button.text-link { white-space: nowrap; }
+
+/* ✓ / ✕ in the corner of Buy and Import cards, same as Scan */
+.card-top .quick { align-self: flex-start; }
+.card-top .quick form { margin: 0; }
