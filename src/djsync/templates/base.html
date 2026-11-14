@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}djsync{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap top-row">
+    <a class="brand" href="{{ url_for('index') }}" aria-label="djsync home">
+      <svg viewBox="0 0 28 20" width="28" height="20" aria-hidden="true">
+        <rect x="0" y="7" width="3" height="6" rx="1.5"/><rect x="5" y="3" width="3" height="14" rx="1.5"/>
+        <rect x="10" y="0" width="3" height="20" rx="1.5"/><rect x="15" y="5" width="3" height="10" rx="1.5"/>
+        <rect x="20" y="2" width="3" height="16" rx="1.5"/><rect x="25" y="7" width="3" height="6" rx="1.5"/>
+      </svg>
+      <span>djsync</span>
+    </a>
+    {% block header_actions %}{% endblock %}
+  </div>
+  {% block nav %}{% endblock %}
+</header>
+
+<main class="wrap">
+  {% block content %}{% endblock %}
+</main>
+
+<div class="toasts" aria-live="polite">
+  {% for cat, msg in get_flashed_messages(with_categories=true) %}
+  <div class="toast {{ cat }}" role="status">
+    <span class="dot" aria-hidden="true"></span>
+    <p>{{ msg }}</p>
+    <button class="x" aria-label="Dismiss" onclick="this.parentElement.remove()">×</button>
+  </div>
+  {% endfor %}
+</div>
+<script>
+  // Success messages fade after a few seconds; errors stay until dismissed.
+  document.querySelectorAll('.toast.ok').forEach(t => setTimeout(() => {
+    t.classList.add('out'); setTimeout(() => t.remove(), 400);
+  }, 7000));
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

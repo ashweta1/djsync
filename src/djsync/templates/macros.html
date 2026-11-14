@@ -1,0 +1,7 @@
+{% macro art(t, size=48) -%}
+  {%- if t.image -%}
+  <img class="art" src="{{ t.image }}" alt="" loading="lazy" width="{{ size }}" height="{{ size }}" style="--s:{{ size }}px">
+  {%- else -%}
+  <div class="art ph" style="--s:{{ size }}px; --h:{{ (t.artist ~ t.title)|hue }}" aria-hidden="true">{{ t.title|initial }}</div>
+  {%- endif -%}
+{%- endmacro %}

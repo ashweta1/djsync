@@ -166,8 +166,10 @@ def test_review_page_renders(cfg):
     st.tracks["2"] = Track(id="2", artist="Peggy Gou", title="Starry Night", status=APPROVED)
     st.save()
     client = create_app(cfg).test_client()
-    html = client.get("/").get_data(as_text=True)
-    assert "Glue" in html and "Starry Night" in html and "beatport.com" in html
+    html = client.get("/").get_data(as_text=True)  # opens on Review: something to review
+    assert 'aria-current="page"' in html and "New on Spotify" in html and "Glue" in html
+    buy = client.get("/?tab=buy").get_data(as_text=True)
+    assert "Starry Night" in buy and "beatport.com" in buy
 
     # approve with nothing ticked -> track 1 skipped
     client.post("/approve", data={})
@@ -713,3 +715,32 @@ def test_approving_starts_research(cfg, monkeypatch):
             break
         time.sleep(0.02)
     assert seen == ["1"]
+
+
+def test_tabs_pick_first_step_that_needs_you_and_keep_tab_on_redirect(cfg):
+    from djsync.web import create_app
+    _approved(cfg, ("Bicep", "Glue"), ("Peggy Gou", "Starry Night"))
+    (cfg.watch_dir / "Bicep - Glue.mp3").write_bytes(b"")
+    client = create_app(cfg).test_client()
+    html = client.get("/").get_data(as_text=True)
+    assert "<h1>To buy</h1>" in html            # nothing to review, so To buy
+    assert "Starry Night" in html and "Glue" not in html.split("<main")[1]
+    ready = client.get("/?tab=ready").get_data(as_text=True)
+    assert "Import 1 into rekordbox" in ready and "djsync-downloads-" in ready
+    # redirects go back to the tab you were on
+    r = client.post("/rescan-downloads", headers={"Referer": "http://localhost/?tab=ready"})
+    assert r.headers["Location"].endswith("/?tab=ready")
+    r = client.post("/import")
+    assert r.headers["Location"].endswith("/?tab=imported")
+
+
+def test_ago_and_hue_filters():
+    from djsync.web import create_app
+    env = create_app(Config()).jinja_env
+    from datetime import datetime, timedelta, timezone
+    three_h = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+    assert env.filters["ago"](three_h) == "3h ago"
+    assert env.filters["ago"]("") == ""
+    assert 0 <= env.filters["hue"]("Bicep Glue") < 360
+    assert env.filters["initial"]("(It Goes Like) Nanana") == "I"
+    assert env.filters["initial"]("...") == "♪"

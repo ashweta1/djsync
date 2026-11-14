@@ -8,6 +8,9 @@ import threading
 import webbrowser
 from pathlib import Path
 
+from datetime import date, datetime, timezone
+from urllib.parse import parse_qs, urlparse
+
 from flask import Flask, flash, redirect, render_template, request, url_for
 
 from . import core, files, research, stores
@@ -62,6 +65,40 @@ def create_app(cfg: Config) -> Flask:
             "agent_enabled": cfg.agent_enabled,
         }
 
+    @app.template_filter("hue")
+    def hue(text: str) -> int:
+        """Stable colour for tracks without cover art."""
+        return sum(ord(c) * (i + 1) for i, c in enumerate(text or "")) % 360
+
+    @app.template_filter("initial")
+    def initial(text: str) -> str:
+        """First letter or digit, for placeholder covers: '(It Goes Like) Nanana' -> 'I'."""
+        return next((c.upper() for c in text or "" if c.isalnum()), "♪")
+
+    @app.template_filter("ago")
+    def ago(stamp: str) -> str:
+        """'2026-11-14T09:12:00Z' -> '3h ago'."""
+        try:
+            dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            return stamp or ""
+        if dt.tzinfo is None:
+            dt = dt.astimezone()
+        secs = (datetime.now(timezone.utc) - dt).total_seconds()
+        if secs < 90:
+            return "just now"
+        for unit, n in (("d", 86400), ("h", 3600), ("m", 60)):
+            if secs >= n:
+                v = int(secs // n)
+                return f"{v}{unit} ago" if unit != "d" or v < 30 else dt.strftime("%-d %b %Y")
+        return "just now"
+
+    def back(tab: str | None = None):
+        """Redirect to a tab: the one given, else the tab the request came from."""
+        if tab is None and request.referrer:
+            tab = parse_qs(urlparse(request.referrer).query).get("tab", [None])[0]
+        return redirect(url_for("index", tab=tab) if tab else url_for("index"))
+
     @app.template_filter("tilde")
     def tilde(path) -> str:
         """/Users/me/Downloads/x.mp3 -> ~/Downloads/x.mp3"""
@@ -88,14 +125,31 @@ def create_app(cfg: Config) -> Flask:
             g["method"] = ("db" if not g["pending"] and not g["unknown"]
                            else "xml" if g["pending"] else "")
         playlists = list(groups.values())
+        pending, approved = st.by_status(PENDING), st.by_status(APPROVED)
+        ready = [t for t in approved if t.id in found]
+        to_buy = [t for t in approved if t.id not in found]
+        skipped, in_rb = st.by_status(SKIPPED), st.by_status(IN_REKORDBOX)
+        tabs = [("review", "Review", len(pending)), ("buy", "To buy", len(to_buy)),
+                ("ready", "Ready to import", len(ready)), ("imported", "Imported", len(playlists)),
+                ("archive", "Archive", len(skipped) + len(in_rb))]
+        tab = request.args.get("tab")
+        if tab not in {k for k, _, _ in tabs}:
+            # Open on the first step that needs you.
+            tab = next((k for k, _, n in tabs[:3] if n), "imported" if playlists else "review")
         return render_template(
             "review.html",
-            pending=st.by_status(PENDING),
-            approved=st.by_status(APPROVED),
-            skipped=st.by_status(SKIPPED),
-            playlists=playlists[:10],
-            in_rekordbox=st.by_status(IN_REKORDBOX),
+            tab=tab,
+            tabs=tabs,
+            pending=pending,
+            approved=approved,
+            to_buy=to_buy,
+            ready=ready,
+            skipped=skipped,
+            playlists=playlists[:20],
+            in_rekordbox=in_rb,
             found=found,
+            prefix=cfg.playlist_prefix,
+            today_playlist=f"{cfg.playlist_prefix}{date.today():%Y-%m-%d}",
             last_scan=st.last_scan,
             watch_dir=cfg.watch_dir,
             stores=[{"key": s, "name": stores.STORES[s][0]}
@@ -116,7 +170,7 @@ def create_app(cfg: Config) -> Flask:
                 flash(msg, "ok")
             except Exception as e:
                 flash(f"Scan failed: {e}", "err")
-        return redirect(url_for("index"))
+        return back("review")
 
     @app.post("/approve")
     def approve():
@@ -134,7 +188,7 @@ def create_app(cfg: Config) -> Flask:
         if cfg.agent_enabled and cfg.agent_auto and approved_now:
             msg += " The agent is finding the best place to buy each one."
         flash(msg + f" Purchased files are picked up from {cfg.watch_dir}.", "ok")
-        return redirect(url_for("index") + "#approved")
+        return back("buy")
 
     @app.post("/open")
     def open_searches():
@@ -149,7 +203,7 @@ def create_app(cfg: Config) -> Flask:
         if len(urls) > n:
             flash(f"Opened the first {n} of {len(urls)} searches. Click again after "
                   "you've bought these to open the next ones.", "ok")
-        return redirect(url_for("index") + "#approved")
+        return back()
 
     @app.post("/research")
     def research_route():
@@ -165,7 +219,7 @@ def create_app(cfg: Config) -> Flask:
         if n:
             flash(f"Researching {n} track{'s' if n != 1 else ''}. Results appear here as they "
                   "come in (about 20-60 seconds each, several at once).", "ok")
-        return redirect(url_for("index") + "#approved")
+        return back()
 
     @app.get("/research-status")
     def research_status():
@@ -179,7 +233,7 @@ def create_app(cfg: Config) -> Flask:
         matched, waiting = core.match_files(cfg, st)
         flash(f"Scanned {cfg.watch_dir} and its subfolders: {n} audio files, "
               f"{len(matched)} matched, {len(waiting)} still missing.", "ok")
-        return redirect(url_for("index") + "#approved")
+        return back()
 
     @app.get("/attach/<track_id>")
     def attach_page(track_id: str):
@@ -207,7 +261,7 @@ def create_app(cfg: Config) -> Flask:
                 t.status = APPROVED
             st.save()
         flash(f"Attached {path.name} to {t.artist} - {t.title}.", "ok")
-        return redirect(url_for("index") + "#approved")
+        return back("ready")
 
     @app.post("/attach/<track_id>")
     def attach(track_id: str):
@@ -242,7 +296,7 @@ def create_app(cfg: Config) -> Flask:
                 subprocess.run(["open", "-R", str(path)], timeout=10)
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 flash("Couldn't open Finder.", "err")
-        return redirect(url_for("index") + "#approved")
+        return back()
 
     @app.post("/detach/<track_id>")
     def detach(track_id: str):
@@ -251,7 +305,7 @@ def create_app(cfg: Config) -> Flask:
             if track_id in st.tracks:
                 st.tracks[track_id].file = ""
                 st.save()
-        return redirect(url_for("index") + "#approved")
+        return back()
 
     @app.post("/move/<track_id>/<status>")
     def move(track_id: str, status: str):
@@ -263,7 +317,7 @@ def create_app(cfg: Config) -> Flask:
             if status != APPROVED and track_id in st.tracks:
                 st.tracks[track_id].file = ""
             st.save()
-        return redirect(url_for("index"))
+        return back()
 
     @app.post("/import")
     def do_import():
@@ -279,7 +333,7 @@ def create_app(cfg: Config) -> Flask:
                   "They're not in rekordbox yet; see the steps under 'Imported'.", "ok")
         elif not r.matched:
             flash(f"No approved tracks found in {cfg.watch_dir} yet.", "err")
-        return redirect(url_for("index") + "#imported")
+        return back("imported")
 
     @app.post("/retry-db")
     def retry_db():
@@ -294,7 +348,7 @@ def create_app(cfg: Config) -> Flask:
                 msg += (f" {len(r.missing)} file(s) were missing and were left out: "
                         + ", ".join(f"{t.artist} - {t.title}" for t in r.missing))
             flash(msg, "ok")
-        return redirect(url_for("index") + "#imported")
+        return back()
 
     @app.post("/open-rekordbox")
     def open_rekordbox():
@@ -307,7 +361,7 @@ def create_app(cfg: Config) -> Flask:
                 continue
         else:
             flash("Couldn't open rekordbox automatically. Open it from Applications.", "err")
-        return redirect(url_for("index") + "#imported")
+        return back()
 
     @app.post("/reveal-path")
     def reveal_path():
@@ -322,7 +376,7 @@ def create_app(cfg: Config) -> Flask:
                 flash("Couldn't open Finder.", "err")
         else:
             flash("That file isn't there any more.", "err")
-        return redirect(url_for("index") + "#imported")
+        return back()
 
     return app
 

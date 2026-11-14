@@ -1,65 +1,60 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Attach file · djsync</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-<main>
-  <a class="back" href="{{ url_for('index') }}#approved">← Back</a>
-  <header style="margin-top:8px">
-    <div>
-      <h1>{{ t.title }}</h1>
-      <div class="muted">{{ t.artist }}{% if t.album %} · {{ t.album }}{% endif %}</div>
-    </div>
-  </header>
+{% extends "base.html" %}
+{% from "macros.html" import art %}
+{% block title %}Attach file · djsync{% endblock %}
 
-  {% for cat, msg in get_flashed_messages(with_categories=true) %}
-    <div class="flash {{ cat }}">{{ msg }}</div>
-  {% endfor %}
-
-  <h2>Pick the file</h2>
-  <div class="card">
-    <form method="post" class="picker" action="{{ url_for('attach', track_id=t.id) }}">
-      {% if can_browse %}
-      <button class="primary" type="submit" formaction="{{ url_for('attach_browse', track_id=t.id) }}"
-              title="Opens a Finder window on your Mac">Choose in Finder…</button>
-      <span class="muted">or paste a path:</span>
-      {% endif %}
-      <input type="text" name="path" placeholder="/Users/you/Downloads/track.mp3" aria-label="File path">
-      <button type="submit">Attach</button>
-    </form>
+{% block content %}
+<a class="back" href="{{ url_for('index', tab='buy') }}">← Back</a>
+<section class="head attach-head">
+  {{ art(t, 72) }}
+  <div>
+    <h1>{{ t.title }}</h1>
+    <p class="muted">{{ t.artist }}{% if t.album %} · {{ t.album }}{% endif %}</p>
   </div>
-  <p class="muted">Tip: in Finder, select the file and press ⌥⌘C (Option-Command-C) to copy its path.</p>
+</section>
 
-  <h2>Files in Downloads <span class="n">{{ candidates|length }}</span></h2>
-  <p class="muted">All audio files in <code>{{ watch_dir }}</code> and its subfolders, best match first. Scores of {{ threshold }}+ are matched automatically.</p>
-  <div class="card">
-    {% if candidates %}
-    <div class="bar"><input class="filter" type="search" placeholder="Filter by name…" oninput="filter(this.value)" aria-label="Filter files"></div>
-    {% for f, score in candidates %}
-    <form method="post" action="{{ url_for('attach', track_id=t.id) }}" class="row cand" data-text="{{ (f.path.name ~ ' ' ~ f.artist ~ ' ' ~ f.title)|lower }}">
-      <span class="score {% if score >= threshold %}good{% endif %}">{{ score }}%</span>
-      <div class="meta">
-        <div class="t">{{ f.path.name }}</div>
-        <div class="path">{% if f.title %}{% if f.artist %}{{ f.artist }} – {% endif %}{{ f.title }} · {% endif %}{{ f.path.parent }}</div>
-      </div>
-      <input type="hidden" name="path" value="{{ f.path }}">
-      <button type="submit">Use this</button>
-    </form>
-    {% endfor %}
-    {% else %}
-    <div class="empty">No audio files found in {{ watch_dir }}. Use “Choose in Finder…” to pick one from anywhere.</div>
+<div class="panel">
+  <h2 class="sub-h">Pick the file</h2>
+  <form method="post" class="picker" action="{{ url_for('attach', track_id=t.id) }}">
+    {% if can_browse %}
+    <button class="btn primary" type="submit" formaction="{{ url_for('attach_browse', track_id=t.id) }}"
+            title="Opens a Finder window on your Mac">Choose in Finder…</button>
+    <span class="muted">or paste a path</span>
     {% endif %}
-  </div>
-</main>
+    <input class="search" type="text" name="path" placeholder="/Users/you/Downloads/track.mp3" aria-label="File path">
+    <button class="btn" type="submit">Attach</button>
+  </form>
+  <p class="muted small">Tip: in Finder, select the file and press ⌥⌘C (Option-Command-C) to copy its path.</p>
+</div>
+
+<h2 class="sub-h">Files in Downloads <span class="muted">{{ candidates|length }}</span></h2>
+<p class="muted small">All audio files in <code>{{ watch_dir|tilde }}</code> and its subfolders, best match first. A score of {{ threshold }}% or more is matched automatically.</p>
+{% if candidates %}
+<div class="toolbar"><input class="search" type="search" placeholder="Filter by name…" oninput="filter(this.value)" aria-label="Filter files"></div>
+<div class="list compact">
+  {% for f, score in candidates %}
+  <form method="post" action="{{ url_for('attach', track_id=t.id) }}" class="row cand" data-text="{{ (f.path.name ~ ' ' ~ f.artist ~ ' ' ~ f.title)|lower }}">
+    <span class="score {% if score >= threshold %}good{% endif %}" style="--p:{{ score }}">{{ score }}%</span>
+    <div class="main">
+      <div class="t">{{ f.path.name }}</div>
+      <div class="a"><code class="small">{% if f.title %}{% if f.artist %}{{ f.artist }} – {% endif %}{{ f.title }} · {% endif %}{{ f.path.parent|tilde }}</code></div>
+    </div>
+    <input type="hidden" name="path" value="{{ f.path }}">
+    <button class="btn ghost" type="submit">Use this</button>
+  </form>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty small-empty">
+  <p class="muted">No audio files found in {{ watch_dir|tilde }}. Use “Choose in Finder…” to pick one from anywhere.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
 <script>
   function filter(q) {
     q = q.toLowerCase().trim();
     document.querySelectorAll('.cand').forEach(r => r.style.display = !q || r.dataset.text.includes(q) ? '' : 'none');
   }
 </script>
-</body>
-</html>
+{% endblock %}
