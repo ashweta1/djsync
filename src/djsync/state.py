@@ -48,6 +48,7 @@ class Track:
 class State:
     tracks: dict[str, Track] = field(default_factory=dict)
     last_scan: str = ""
+    last_scan_summary: str = ""     # e.g. "3 new" - shown under the Scan title
     # What "Scan Spotify" reads: "liked" and/or playlist ids. Liked Songs by default.
     sources: list[str] = field(default_factory=lambda: ["liked"])
     # Your playlists as of the last scan: [{id, name, count, owner}]
@@ -61,6 +62,7 @@ class State:
             raw = json.loads(path.read_text())
             st.last_scan = raw.get("last_scan", "")
             st.sources = raw.get("sources") or ["liked"]
+            st.last_scan_summary = raw.get("last_scan_summary", "")
             st.playlists = raw.get("playlists", [])
             known = set(Track.__dataclass_fields__)
             st.tracks = {
@@ -76,6 +78,7 @@ class State:
         tmp.write_text(json.dumps(
             {"last_scan": self.last_scan,
              "sources": self.sources,
+             "last_scan_summary": self.last_scan_summary,
              "playlists": self.playlists,
              "tracks": {k: asdict(v) for k, v in self.tracks.items()}},
             indent=2,

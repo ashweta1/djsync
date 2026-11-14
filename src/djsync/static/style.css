@@ -612,3 +612,14 @@ details.menu summary.btn::after { content: " ▾"; }
 /* an unsure pick keeps its store colour but gets the dashed "check first" outline */
 .store-link.unsure { color: var(--sc); background: color-mix(in srgb, var(--sc) 8%, transparent);
                      border-style: dashed; border-color: var(--warn); }
+
+/* errors: a slim bar at the top, not a floating pop-up */
+.errbar-wrap { padding-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.errbar {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; border-radius: 10px; font-size: 13.5px;
+  color: var(--err); background: var(--err-soft); border: 1px solid color-mix(in srgb, var(--err) 35%, transparent);
+}
+.errbar p { flex: 1; margin: 0; color: var(--text); }
+.errbar .x { border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 0 4px; }
+.errbar-wrap + main .board { height: calc(100vh - 60px - 32px - 52px); }
+.text-link, button.text-link { white-space: nowrap; }

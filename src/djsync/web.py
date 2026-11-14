@@ -151,6 +151,7 @@ def create_app(cfg: Config) -> Flask:
         return render_template(
             "review.html",
             sources=st.sources,
+            last_scan_summary=st.last_scan_summary,
             sources_label=sources_label,
             spotify_playlists=st.playlists,
             view="archive" if request.args.get("view") == "archive" else "board",
@@ -184,15 +185,8 @@ def create_app(cfg: Config) -> Flask:
                         flash("Tick at least one: Liked Songs or a playlist.", "err")
                         return redirect(url_for("index", pick=1))
                 r = core.scan(cfg, st, sources=sources)
-                what = "source" if r.sources == 1 else "sources"
-                msg = (f"Checked {r.liked_checked} tracks from {r.sources} {what}: {r.new_missing} "
-                       f"new to review, {r.already_owned} already in rekordbox.")
                 for err in r.errors:
                     flash(err, "err")
-                if r.now_in_rekordbox:
-                    msg += (f" {r.now_in_rekordbox} track(s) you were waiting on are now in "
-                            "rekordbox; see 'Already in rekordbox'.")
-                flash(msg, "ok")
             except Exception as e:
                 flash(f"Scan failed: {e}", "err")
         return back()
@@ -209,7 +203,6 @@ def create_app(cfg: Config) -> Flask:
             try:
                 st.playlists = spotify.playlists(spotify.client(cfg))
                 st.save()
-                flash(f"Found {len(st.playlists)} playlists.", "ok")
             except Exception as e:
                 flash(f"Couldn't load your playlists: {e}", "err")
         return redirect(url_for("index", pick=1))
@@ -225,18 +218,12 @@ def create_app(cfg: Config) -> Flask:
                 rest = [i for i in pending if i not in chosen]
                 st.set_status(rest, SKIPPED)
                 st.save()
-                flash(f"Skipped {len(rest)} track{'s' if len(rest) != 1 else ''}. "
-                      "They're in the Archive if you change your mind.", "ok")
                 return back()
             st.set_status([i for i in pending if i in chosen], APPROVED)
             st.save()
         approved_now = [i for i in pending if i in chosen]
         if cfg.agent_enabled and cfg.agent_auto and approved_now:
             start_research(approved_now)
-        msg = f"Approved {len(approved_now)} tracks."
-        if cfg.agent_enabled and cfg.agent_auto and approved_now:
-            msg += " The agent is finding the best place to buy each one."
-        flash(msg + f" Purchased files are picked up from {where()}.", "ok")
         return back(approved_now)
 
     @app.post("/open")
@@ -248,10 +235,7 @@ def create_app(cfg: Config) -> Flask:
             return "unknown store", 400
         _, waiting = core.match_files(cfg, st)
         urls = [stores.url(store, t.artist, t.title) for t in waiting]
-        n = stores.open_tabs(urls)
-        if len(urls) > n:
-            flash(f"Opened the first {n} of {len(urls)} searches. Click again after "
-                  "you've bought these to open the next ones.", "ok")
+        stores.open_tabs(urls)
         return back()
 
     @app.post("/research")
@@ -264,11 +248,8 @@ def create_app(cfg: Config) -> Flask:
         else:
             matched, waiting = core.match_files(cfg, st)
             ids = [t.id for t in waiting if not t.researched_at]
-        n = start_research(ids)
-        if n:
-            flash(f"Researching {n} track{'s' if n != 1 else ''}. Results appear here as they "
-                  "come in (about 20-40 seconds each).", "ok")
-        return back()
+        start_research(ids)
+        return back(ids if track_id else None)  # highlight the card you clicked
 
     @app.get("/research-status")
     def research_status():
@@ -276,12 +257,7 @@ def create_app(cfg: Config) -> Flask:
 
     @app.post("/rescan-downloads")
     def rescan_downloads():
-        files.clear_cache()
-        st = state()
-        n = len(core._scan_downloads(cfg))
-        matched, waiting = core.match_files(cfg, st)
-        flash(f"Scanned {where()} (with subfolders): {n} audio files, "
-              f"{len(matched)} matched, {len(waiting)} still missing.", "ok")
+        files.clear_cache()  # the board re-reads the folders when it reloads
         return back()
 
     @app.get("/attach/<track_id>")
@@ -310,7 +286,6 @@ def create_app(cfg: Config) -> Flask:
             if t.status != APPROVED:
                 t.status = APPROVED
             st.save()
-        flash(f"Attached {path.name} to {t.artist} - {t.title}.", "ok")
         return back([track_id])
 
     @app.post("/attach/<track_id>")
@@ -378,12 +353,7 @@ def create_app(cfg: Config) -> Flask:
             r = core.do_import(cfg, st)
         if r.error:
             flash(r.error, "err")
-        if r.method == "db":
-            flash(f"Added {len(r.matched)} tracks to rekordbox playlist '{r.playlist}'.", "ok")
-        elif r.method == "xml":
-            flash(f"Saved {len(r.matched)} tracks to an XML file for playlist '{r.playlist}'. "
-                  "They're not in rekordbox yet; see the steps under 'Imported'.", "ok")
-        elif not r.matched:
+        if not r.method and not r.matched:
             flash(f"No approved tracks found in {where()} yet.", "err")
         return back()
 
@@ -394,12 +364,9 @@ def create_app(cfg: Config) -> Flask:
             r = core.retry_db(cfg, st, request.form.get("playlist", ""))
         if r.error:
             flash(r.error, "err")
-        else:
-            msg = f"Added {r.added} tracks to rekordbox playlist '{r.playlist}'."
-            if r.missing:
-                msg += (f" {len(r.missing)} file(s) were missing and were left out: "
-                        + ", ".join(f"{t.artist} - {t.title}" for t in r.missing))
-            flash(msg, "ok")
+        elif r.missing:
+            flash(f"{len(r.missing)} file(s) were missing and were left out of '{r.playlist}': "
+                  + ", ".join(f"{t.artist} - {t.title}" for t in r.missing), "err")
         return back()
 
     @app.post("/open-rekordbox")

@@ -23,25 +23,21 @@
   {% block nav %}{% endblock %}
 </header>
 
+{% set errors = get_flashed_messages(category_filter=["err"]) %}
+{% if errors %}
+<div class="wrap {% block bar_class %}{% endblock %} errbar-wrap">
+  {% for msg in errors %}
+  <div class="errbar" role="alert">
+    <span aria-hidden="true">⚠</span><p>{{ msg }}</p>
+    <button type="button" class="x" aria-label="Dismiss" onclick="this.parentElement.remove()">×</button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 <main class="wrap {% block main_class %}{% endblock %}">
   {% block content %}{% endblock %}
 </main>
 
-<div class="toasts" aria-live="polite">
-  {% for cat, msg in get_flashed_messages(with_categories=true) %}
-  <div class="toast {{ cat }}" role="status">
-    <span class="dot" aria-hidden="true"></span>
-    <p>{{ msg }}</p>
-    <button class="x" aria-label="Dismiss" onclick="this.parentElement.remove()">×</button>
-  </div>
-  {% endfor %}
-</div>
-<script>
-  // Success messages fade after a few seconds; errors stay until dismissed.
-  document.querySelectorAll('.toast.ok').forEach(t => setTimeout(() => {
-    t.classList.add('out'); setTimeout(() => t.remove(), 400);
-  }, 7000));
-</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

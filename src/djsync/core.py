@@ -84,6 +84,8 @@ def scan(cfg: Config, st: State, sp=None, library: list | None = None,
             res.now_in_rekordbox += 1
 
     st.last_scan = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    st.last_scan_summary = (f"{res.new_missing} new" if res.new_missing else "nothing new") + (
+        f", {len(res.errors)} problem{'s' if len(res.errors) != 1 else ''}" if res.errors else "")
     st.save()
     return res
 

@@ -339,7 +339,8 @@ def test_detach_and_rescan_button(cfg, tmp_path):
     (cfg.watch_dir / "sub").mkdir()
     (cfg.watch_dir / "sub" / "Bicep - Glue.wav").write_bytes(b"")
     r = client.post("/rescan-downloads", follow_redirects=True).get_data(as_text=True)
-    assert "2 audio files, 1 matched, 0 still missing" in r
+    imp = r.split('id="c-import"')[1].split('id="c-pl"')[0]
+    assert "Glue" in imp and "Bicep - Glue.wav" in imp
 
 
 def test_deezer_link():
@@ -1268,3 +1269,34 @@ def test_find_best_source_is_first_on_the_card(cfg):
     assert foot.lstrip(">").strip().startswith("<form") and "Find best source" in foot.split("Search Beatport")[0]
     assert card.count("Find best source") == 1 and "Research again" not in card
     assert 'class="store-link store-deezer"' in card
+
+
+
+# --- no pop-ups: results show on the board, errors in a bar ------------------------------
+
+def test_no_popups_and_clicked_card_is_highlighted(cfg, monkeypatch):
+    from djsync.web import create_app
+    monkeypatch.setattr(research, "research_many", lambda c, tracks, on_done=None: None)
+    _approved(cfg, ("Bicep", "Glue"))
+    client = create_app(cfg).test_client()
+    r = client.post("/research", data={"id": "1"})
+    assert r.headers["Location"].endswith("/?hl=1")          # the card you clicked
+    html = client.get(r.headers["Location"]).get_data(as_text=True)
+    assert "toast" not in html and "errbar" not in html
+    assert 'class="card buy arrive' in html
+
+
+def test_errors_shown_in_a_bar_not_a_popup(cfg):
+    from djsync.web import create_app
+    client = create_app(cfg).test_client()
+    html = client.post("/import", follow_redirects=True).get_data(as_text=True)
+    assert 'class="errbar"' in html and "No approved tracks found" in html
+
+
+def test_scan_summary_under_scan_title(cfg):
+    from djsync.web import create_app
+    st = State.load(cfg.state_path)
+    core.scan(cfg, st, sp=_fake_sp(), library=[], sources=["liked", "pC"])
+    assert st.last_scan_summary == "1 new, 1 problem"
+    html = create_app(cfg).test_client().get("/").get_data(as_text=True)
+    assert "1 new, 1 problem" in html.split('id="c-scan"')[1].split("</header>")[0]

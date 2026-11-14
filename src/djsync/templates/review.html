@@ -3,6 +3,7 @@
 
 {% block main_class %}{% if view == "board" %}wide board-main{% endif %}{% endblock %}
 {% block top_class %}{% if view == "board" %}wide{% endif %}{% endblock %}
+{% block bar_class %}{% if view == "board" %}wide{% endif %}{% endblock %}
 
 {% block header_actions %}
 <div class="top-actions">
@@ -30,7 +31,7 @@
         <button type="button" class="btn sm src-toggle" aria-expanded="false" aria-controls="src-panel"
                 onclick="togglePanel(this)" title="Choose what to scan">▾</button>
       </div>
-      <span class="col-sub"><span class="src-label" title="What Scan Spotify reads">{{ sources_label }}</span> · {% if last_scan %}scanned {{ last_scan|ago }}{% else %}not scanned yet{% endif %}</span>
+      <span class="col-sub"><span class="src-label" title="What Scan Spotify reads">{{ sources_label }}</span> · {% if last_scan %}scanned {{ last_scan|ago }}{% if last_scan_summary %} · {{ last_scan_summary }}{% endif %}{% else %}not scanned yet{% endif %}</span>
     </header>
 
     <div class="src-panel" id="src-panel" hidden>
@@ -394,8 +395,34 @@
     document.querySelectorAll('.card.scan').forEach(c => c.hidden = !!q && !c.dataset.text.includes(q));
   }
   count();
-  // Scroll each column to its newly arrived card.
-  document.querySelectorAll('.col-body .arrive').forEach(c => c.scrollIntoView({block: 'nearest'}));
+  // Keep each column where you left it across reloads, so you don't lose your place.
+  const SCROLL_KEY = 'djsync-scroll';
+  function saveScroll() {
+    try {
+      const pos = {board: (document.querySelector('.board') || {}).scrollLeft || 0};
+      document.querySelectorAll('.col').forEach(c => {
+        const body = c.querySelector('.col-body');
+        if (body) pos[c.getAttribute('aria-labelledby')] = body.scrollTop;
+      });
+      sessionStorage.setItem(SCROLL_KEY, JSON.stringify(pos));
+    } catch (e) {}
+  }
+  addEventListener('pagehide', saveScroll);
+  try {
+    const pos = JSON.parse(sessionStorage.getItem(SCROLL_KEY) || '{}');
+    const board = document.querySelector('.board');
+    if (board && pos.board) board.scrollLeft = pos.board;
+    document.querySelectorAll('.col').forEach(c => {
+      const body = c.querySelector('.col-body');
+      const top = pos[c.getAttribute('aria-labelledby')];
+      if (body && top) body.scrollTop = top;
+    });
+  } catch (e) {}
+  // Then make sure the card you just acted on (or that just moved) is in view.
+  document.querySelectorAll('.col-body .arrive').forEach(c => {
+    const body = c.closest('.col-body'), r = c.getBoundingClientRect(), b = body.getBoundingClientRect();
+    if (r.top < b.top || r.bottom > b.bottom) c.scrollIntoView({block: 'nearest'});
+  });
   if (location.search.includes('hl=')) history.replaceState(null, '', location.pathname + (location.search.includes('view=archive') ? '?view=archive' : ''));
   {% if researching %}
   // The agent is working: reload when results come in, unless you're mid-selection.
