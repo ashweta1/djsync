@@ -64,6 +64,26 @@ def cmd_research(cfg, args) -> int:
     return 0
 
 
+def cmd_beatport_test(cfg, args) -> int:
+    """Show what djsync can read from Beatport's own search on this computer."""
+    from . import beatport
+
+    query = " ".join(args.query)
+    url = beatport.SEARCH_URL.format(q=__import__("urllib.parse").parse.quote_plus(query))
+    print(f"Searching Beatport for: {query}\n  {url}")
+    r = beatport.search("", query)
+    print(f"  HTTP status: {r.status or '-'}   page data found: {'yes' if r.found_json else 'no'}")
+    if r.error:
+        print(f"  Problem: {r.error}")
+    for c in r.candidates:
+        print(f"  - {c.describe()}")
+    if r.candidates:
+        print(f"\nOK: {len(r.candidates)} track(s) read from Beatport's search.")
+        return 0
+    print("\nNothing could be read. Please send this output to whoever maintains djsync.")
+    return 1
+
+
 def cmd_retry(cfg) -> int:
     st = State.load(cfg.state_path)
     targets = core.retry_targets(st)
@@ -116,6 +136,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--no-browser", action="store_true")
     rs = sub.add_parser("research", help="find the best place to buy each approved track")
     rs.add_argument("--again", action="store_true", help="also redo tracks already researched")
+    bt = sub.add_parser("beatport-test", help="check that Beatport's own search can be read")
+    bt.add_argument("query", nargs="+", help='e.g. "Whoja Vu Jiya Jale"')
     i = sub.add_parser("import", help="import purchased files into today's djsync-downloads-<date> playlist")
     i.add_argument("--dry-run", action="store_true", help="only show which files match")
     i.add_argument("--retry", action="store_true",
@@ -126,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = config.load()
     handler = {"init": cmd_init, "scan": cmd_scan, "review": cmd_review, "import": cmd_import,
-               "research": cmd_research}
+               "research": cmd_research, "beatport-test": cmd_beatport_test}
     try:
         return handler[args.cmd](cfg, args)
     except KeyboardInterrupt:

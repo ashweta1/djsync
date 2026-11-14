@@ -136,7 +136,7 @@ class Finding:
     error: str = ""
 
 
-def _describe(t: Track) -> str:
+def _describe(t: Track, cands=None) -> str:
     lines = [f"Artist(s): {t.artist}", f"Title: {t.title}"]
     if t.album:
         lines.append(f"Album/release: {t.album}")
@@ -145,7 +145,13 @@ def _describe(t: Track) -> str:
     if t.duration_ms:
         s = t.duration_ms // 1000
         lines.append(f"Length on Spotify: {s // 60}:{s % 60:02d}")
-    return "Find where to buy this track:\n" + "\n".join(lines)
+    text = "Find where to buy this track:\n" + "\n".join(lines)
+    if cands:
+        text += ("\n\nBeatport's own search (its live catalogue, newer than any web search "
+                 "index) returned these tracks:\n" + "\n".join(f"- {c.describe()}" for c in cands)
+                 + "\n\nIf one of these is the track, answer with its URL - you don't need to "
+                 "search. Only search the web if none of them is the right track.")
+    return text
 
 
 _BEATPORT_HOST = re.compile(r"^https?://(?:[a-z0-9-]+\.)*beatport\.com(?=/|$)", re.I)
@@ -187,13 +193,13 @@ def _final_json(content) -> dict | None:
     return None
 
 
-def ask_claude(cfg: Config, t: Track, client=None) -> tuple[dict | None, set[str]]:
+def ask_claude(cfg: Config, t: Track, client=None, cands=None) -> tuple[dict | None, set[str]]:
     """Run the Beatport search. Returns (answer, urls seen in search results)."""
     if client is None:
         import anthropic
 
         client = anthropic.Anthropic()
-    messages = [{"role": "user", "content": _describe(t)}]
+    messages = [{"role": "user", "content": _describe(t, cands)}]
     tools = [{
         "type": "web_search_20260209",
         "name": "web_search",
@@ -258,11 +264,12 @@ def _tool_text(content) -> str:
     return ""
 
 
-def ask_claude_code(cfg: Config, t: Track, run=subprocess.run) -> tuple[dict | None, set[str]]:
+def ask_claude_code(cfg: Config, t: Track, run=subprocess.run, cands=None) -> tuple[dict | None, set[str]]:
     """Same search, run through Claude Code (`claude -p`) on your Claude plan."""
     exe = shutil.which(cfg.claude_path or "claude") or cfg.claude_path or "claude"
     cmd = [
-        exe, "-p", _describe(t) + "\n\nUse the web search tool, then give your answer.",
+        exe, "-p", _describe(t, cands) + ("\n\nGive your answer." if cands else
+                                           "\n\nUse the web search tool, then give your answer."),
         "--append-system-prompt", SYSTEM,
         "--tools", "WebSearch", "--allowedTools", "WebSearch",
         "--output-format", "stream-json", "--verbose",
@@ -332,10 +339,16 @@ def ask_claude_code(cfg: Config, t: Track, run=subprocess.run) -> tuple[dict | N
     return answer, seen
 
 
-def ask(cfg: Config, t: Track, client=None) -> tuple[dict | None, set[str]]:
+def ask(cfg: Config, t: Track, client=None, cands=None) -> tuple[dict | None, set[str]]:
     if client is None and backend(cfg) == "claude-code":
-        return ask_claude_code(cfg, t)
-    return ask_claude(cfg, t, client)
+        return ask_claude_code(cfg, t, cands=cands)
+    return ask_claude(cfg, t, client, cands=cands)
+
+
+def _by_name(t: Track, cands) -> list:
+    """Beatport results with the same artist and title (any version)."""
+    want = TrackKey.of(t.artist, t.title)
+    return [c for c in cands if c.artists and similar(want, TrackKey.of(c.artists, c.title))]
 
 
 def deezer_link(t: Track, opener=urllib.request.urlopen) -> str:
@@ -361,13 +374,44 @@ def deezer_link(t: Track, opener=urllib.request.urlopen) -> str:
     return ""
 
 
+def _take(f: Finding, c, confidence: str, note: str, t: Track) -> Finding:
+    title = c.title + (f" ({c.mix})" if c.mix and c.mix.lower() not in c.title.lower() else "")
+    f.store, f.store_name, f.url = "beatport.com", "Beatport", _norm_url(c.url)
+    f.label, f.confidence, f.note = f"{title} - {c.artists or t.artist}", confidence, note
+    return f
+
+
 def research(cfg: Config, t: Track, client=None, opener=urllib.request.urlopen) -> Finding:
     f = Finding()
+
+    # 1. Beatport's own search (its live catalogue).
+    cands = []
+    if cfg.beatport_direct:
+        from . import beatport
+
+        bp = beatport.search(t.artist, t.title, opener)
+        cands = bp.candidates
+        if t.isrc:
+            same = [c for c in cands if c.isrc and c.isrc.upper() == t.isrc.upper()]
+            if same:
+                # Same recording (ISRC) on Beatport: no need to ask Claude.
+                _take(f, same[0], "high", "Same recording as on Spotify (matching ISRC), found "
+                      "with Beatport's own search.", t)
+                f.deezer_url = deezer_link(t, opener)
+                return f
+
+    # 2. Claude picks the right version from those results, or searches the web.
     try:
-        answer, seen = ask(cfg, t, client)
+        answer, seen = ask(cfg, t, client, cands=cands)
+        seen = seen | {_norm_url(c.url) for c in cands}
     except Exception as e:  # no credentials, network, API error: report, don't crash
         answer, seen = None, set()
         f.error = f"Store search failed: {e}"
+        named = _by_name(t, cands)
+        if named:
+            # Claude isn't available, but Beatport has a track with the same name.
+            _take(f, named[0], "low", f"Picked by name from Beatport's search; check the version. ({e})", t)
+            f.error = ""
     if answer and answer.get("found"):
         url = _norm_url(answer.get("url", ""))
         domain = store_for(url)
@@ -392,7 +436,7 @@ def research(cfg: Config, t: Track, client=None, opener=urllib.request.urlopen) 
                       "the search results, so it was ignored.")
     elif answer and not f.error:
         f.note = answer.get("reason", "") or "Not found in any store."
-    elif not answer and not f.error:
+    elif not answer and not f.error and not f.store:
         f.error = "The store search didn't return an answer."
 
     f.deezer_url = deezer_link(t, opener)

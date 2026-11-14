@@ -594,6 +594,7 @@ class FakeClaude:
 
 
 def _no_deezer(url, timeout=15):
+    url = getattr(url, 'full_url', url)
     return io.BytesIO(b'{"error": {}}')
 
 
@@ -642,6 +643,7 @@ def test_research_other_store_when_not_on_beatport():
 
 def test_research_falls_back_to_deezer():
     def deezer(url, timeout=15):
+        url = getattr(url, 'full_url', url)
         assert "isrc:GBCFB1700200" in url
         return io.BytesIO(b'{"id": 1, "link": "https://www.deezer.com/track/1"}')
     client = FakeClaude(_resp({"found": False, "store": "", "url": "", "title": "", "mix": "",
@@ -653,6 +655,7 @@ def test_research_falls_back_to_deezer():
 
 def test_deezer_search_fallback_checks_the_match():
     def deezer(url, timeout=15):
+        url = getattr(url, 'full_url', url)
         if "isrc:" in url:
             return io.BytesIO(b'{"error": {"type": "DataException"}}')
         return io.BytesIO(_json.dumps({"data": [
@@ -820,7 +823,7 @@ def test_claude_code_link_must_be_in_its_search_results(tmp_path, monkeypatch):
     cfg = Config(home=tmp_path, agent_backend="claude-code")
     run = FakeRun(_cc_output(_answer(url="https://www.beatport.com/track/glue/999"), [BP]))
     real = research.ask_claude_code
-    monkeypatch.setattr(research, "ask_claude_code", lambda c, t: real(c, t, run=run))
+    monkeypatch.setattr(research, "ask_claude_code", lambda c, t, cands=None: real(c, t, run=run, cands=cands))
     f = research.research(cfg, GLUE, opener=_no_deezer)  # no client -> Claude Code backend
     assert f.url == "" and "ignored" in f.note
 
@@ -918,6 +921,7 @@ def test_claude_code_not_signed_in_is_explained(tmp_path):
 def test_error_shown_even_when_falling_back_to_deezer(cfg):
     from djsync.web import create_app
     def deezer(url, timeout=15):
+        url = getattr(url, 'full_url', url)
         return io.BytesIO(b'{"id": 1, "link": "https://www.deezer.com/track/1"}')
     f = research.research(cfg, GLUE, FakeClaude(RuntimeError("Claude Code isn't signed in")), opener=deezer)
     assert f.store == "deezer" and "isn't signed in" in f.error
@@ -1033,3 +1037,107 @@ def test_extra_dirs_config(tmp_path):
     c = cfgmod.load(p)
     assert c.search_dirs == [Path("/dl"), Path("/a")] and c.recent_days == 7
     assert Config().extra_dirs == [Path("~/Music").expanduser()]
+
+
+# --- Beatport's own search -------------------------------------------------------------
+
+from djsync import beatport
+
+
+def _next_page(data):
+    return ('<html><body><div id="__next"></div><script id="__NEXT_DATA__" type="application/json">'
+            + _json.dumps(data) + "</script></body></html>")
+
+
+SEARCH_STYLE = {"props": {"pageProps": {"dehydratedState": {"queries": [{"state": {"data": {"data": [
+    {"track_id": 20817455, "track_name": "Jiya Jale", "mix_name": "Original Mix",
+     "artists": [{"artist_name": "Whoja Vu"}], "label": {"label_name": "Malaal Records"},
+     "isrc": "QZXXX2600001", "bpm": 122, "key_name": "A min", "length": 400000 // 1000,
+     "release": {"release_name": "Malaal"}, "publish_date": "2026-04-03"},
+    {"track_id": 20817460, "track_name": "Jiya Jale", "mix_name": "Extended Mix",
+     "artists": [{"artist_name": "Whoja Vu"}]},
+]}}}]}}}}
+
+CATALOG_STYLE = {"props": {"pageProps": {"tracks": [
+    {"id": 123, "name": "Glue", "mix_name": "Original Mix", "slug": "glue",
+     "artists": [{"id": 1, "name": "Bicep", "slug": "bicep"}],
+     "release": {"id": 9, "name": "Bicep", "label": {"name": "Ninja Tune"}},
+     "length_ms": 269000, "bpm": 130, "key": {"name": "E Minor"}, "isrc": "GBCFB1700200"},
+]}}}
+
+
+def test_beatport_parse_search_style_json():
+    cands, found = beatport.parse(_next_page(SEARCH_STYLE))
+    assert found and [c.url for c in cands] == [
+        "https://www.beatport.com/track/jiya-jale/20817455",
+        "https://www.beatport.com/track/jiya-jale/20817460"]
+    c = cands[0]
+    assert (c.artists, c.mix, c.label, c.isrc, c.bpm) == ("Whoja Vu", "Original Mix", "Malaal Records", "QZXXX2600001", "122")
+
+
+def test_beatport_parse_catalog_style_json():
+    [c], _ = beatport.parse(_next_page(CATALOG_STYLE))
+    assert c.url == "https://www.beatport.com/track/glue/123"
+    assert (c.artists, c.label, c.length, c.key) == ("Bicep", "Ninja Tune", "4:29", "E Minor")
+
+
+def test_beatport_parse_falls_back_to_links():
+    html = ('<a href="/track/jiya-jale/20817455"><span>Jiya Jale</span> Original Mix</a>'
+            '<a href="/release/malaal/1">Malaal</a>')
+    [c], found = beatport.parse(html)
+    assert not found and c.url.endswith("/20817455") and "Jiya Jale" in c.title
+
+
+def _page_opener(html):
+    def opener(url, timeout=15):
+        url = getattr(url, "full_url", url)
+        if "beatport.com/search" in url:
+            return io.BytesIO(html.encode())
+        return io.BytesIO(b'{"error": {}}')
+    return opener
+
+
+def test_research_isrc_match_skips_claude():
+    t = Track(id="1", artist="Bicep", title="Glue", isrc="GBCFB1700200")
+    client = FakeClaude()  # would fail if called
+    f = research.research(Config(), t, client, opener=_page_opener(_next_page(CATALOG_STYLE)))
+    assert f.url == "https://www.beatport.com/track/glue/123" and f.confidence == "high"
+    assert client.calls == []
+
+
+def test_research_claude_picks_from_beatport_results():
+    t = Track(id="1", artist="Whoja Vu", title="Jiya Jale")
+    ext = "https://www.beatport.com/track/jiya-jale/20817460"
+    # Claude picks the Extended Mix; it didn't web-search, so seen comes only from Beatport.
+    client = FakeClaude(_resp(_answer(url=ext, title="Jiya Jale", mix="Extended Mix", artists="Whoja Vu"), []))
+    f = research.research(Config(), t, client, opener=_page_opener(_next_page(SEARCH_STYLE)))
+    assert f.url == ext and f.label == "Jiya Jale (Extended Mix) - Whoja Vu"
+    prompt = client.calls[0]["messages"][0]["content"]
+    assert "Beatport's own search" in prompt and "20817455" in prompt and "Malaal Records" in prompt
+
+
+def test_research_name_match_when_claude_unavailable():
+    t = Track(id="1", artist="Whoja Vu", title="Jiya Jale")
+    f = research.research(Config(), t, FakeClaude(RuntimeError("Not logged in")),
+                          opener=_page_opener(_next_page(SEARCH_STYLE)))
+    assert f.store == "beatport.com" and f.confidence == "low" and not f.error
+    assert "check the version" in f.note
+
+
+def test_beatport_search_can_be_turned_off():
+    t = Track(id="1", artist="Bicep", title="Glue", isrc="GBCFB1700200")
+    client = FakeClaude(_resp({"found": False, "store": "", "url": "", "title": "", "mix": "",
+                               "artists": "", "confidence": "low", "reason": "x"}, []))
+    f = research.research(Config(beatport_direct=False), t, client,
+                          opener=_page_opener(_next_page(CATALOG_STYLE)))
+    assert f.url == "" and len(client.calls) == 1
+
+
+def test_beatport_test_command(monkeypatch, capsys):
+    from djsync import cli, config as cfgmod
+    monkeypatch.setattr(cfgmod, "load", lambda: Config())
+    monkeypatch.setattr(beatport, "search", lambda a, q, *x, **k: beatport.Result(
+        candidates=beatport.parse(_next_page(SEARCH_STYLE))[0], status=200, found_json=True))
+    assert cli.main(["beatport-test", "Whoja", "Vu", "Jiya", "Jale"]) == 0
+    out = capsys.readouterr().out
+    assert "page data found: yes" in out and "2 track(s)" in out

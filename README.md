@@ -46,8 +46,12 @@ header. On a phone, swipe between the columns.
    can listen and check you have the right version.
    **Research agent:** when you approve tracks, an AI agent (Claude, with web
    search) finds the best place to buy each one:
-   1. It searches **Beatport first** and compares the results with the Spotify
-      track: artist, title, remix/version, length and ISRC. It picks the
+   1. It searches **Beatport's own catalogue first**: the same search as the
+      box on beatport.com, run from your Mac. That finds new releases that web
+      search engines haven't indexed yet. If a result has the same ISRC as the
+      Spotify track, it's picked straight away. Otherwise Claude compares
+      Beatport's results with the Spotify track: artist, title, remix/version,
+      length and ISRC. It picks the
       Extended or Original Mix when Spotify has a radio edit, but never a
       different remix.
    2. If Beatport doesn't have it, it **searches the web** for another
@@ -157,6 +161,7 @@ All the steps can be done from the review page. Or use the command line:
 ```bash
 djsync scan              # list liked songs that aren't in rekordbox
 djsync research          # find the best place to buy each approved track (--again to redo)
+djsync beatport-test "Whoja Vu Jiya Jale"   # check djsync can read Beatport's search
 djsync import --dry-run  # show which downloaded files match approved tracks
 djsync import            # import them into today's djsync-downloads-<date> playlist
 djsync import --watch    # keep checking every 30s until all approved tracks arrive
