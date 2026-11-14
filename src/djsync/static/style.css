@@ -58,3 +58,6 @@ form.inline { display: inline; }
 .score { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--muted); width: 52px; text-align: right; flex: none; }
 .score.good { color: var(--accent); font-weight: 600; }
 .path { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.meta .filepath { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+  color: var(--accent); margin-top: 2px; overflow-wrap: anywhere; }

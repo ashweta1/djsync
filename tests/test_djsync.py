@@ -351,3 +351,23 @@ def test_detach_and_rescan_button(cfg, tmp_path):
 def test_deezer_link():
     assert stores.url("deezer", "Peggy Gou", "Starry Night") == \
         "https://www.deezer.com/search/Peggy%20Gou%20Starry%20Night/track"
+
+
+def test_found_file_shows_full_path(cfg, monkeypatch):
+    from djsync.web import create_app
+    _approved(cfg, ("Bicep", "Glue"))
+    (cfg.watch_dir / "Beatport").mkdir()
+    f = cfg.watch_dir / "Beatport" / "bicep_glue_320.mp3"
+    f.write_bytes(b"")
+    html = create_app(cfg).test_client().get("/").get_data(as_text=True)
+    assert "File found" in html
+    assert str(f) in html  # full path shown under the track
+
+
+def test_tilde_filter():
+    from djsync.web import create_app
+    tilde = create_app(Config()).jinja_env.filters["tilde"]
+    home = str(Path.home())
+    assert tilde(f"{home}/Downloads/a.mp3") == "~/Downloads/a.mp3"
+    assert tilde("/Volumes/USB/a.mp3") == "/Volumes/USB/a.mp3"
+    assert tilde(f"{home}x/a.mp3") == f"{home}x/a.mp3"

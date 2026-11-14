@@ -69,10 +69,14 @@
     {% for t in approved %}
     <div class="row">
       <img src="{{ t.image }}" alt="" loading="lazy">
-      <div class="meta"><div class="t">{{ t.title }}</div><div class="a">{{ t.artist }}</div></div>
+      <div class="meta">
+        <div class="t">{{ t.title }}</div><div class="a">{{ t.artist }}</div>
+        {% if t.id in found %}<div class="filepath" title="{{ found[t.id] }}">{{ found[t.id]|tilde }}</div>{% endif %}
+      </div>
       <div class="links">
         {% if t.id in found %}
-          <span class="chip found" title="{{ found[t.id] }}">{% if t.file %}Attached{% else %}File found{% endif %}: {{ found[t.id].name|truncate(40) }}</span>
+          <span class="chip found">{% if t.file %}Attached{% else %}File found{% endif %}</span>
+          {% if can_reveal %}<form method="post" action="{{ url_for('reveal', track_id=t.id) }}" class="inline"><button class="link">Show in Finder</button></form>{% endif %}
           {% if t.file %}
           <form method="post" action="{{ url_for('detach', track_id=t.id) }}" class="inline"><button class="link">Detach</button></form>
           {% else %}

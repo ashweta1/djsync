@@ -25,7 +25,16 @@ def create_app(cfg: Config) -> Flask:
 
     @app.context_processor
     def helpers():
-        return {"store_links": lambda t: stores.links(t.artist, t.title, cfg.stores)}
+        return {
+            "store_links": lambda t: stores.links(t.artist, t.title, cfg.stores),
+            "can_reveal": sys.platform == "darwin",
+        }
+
+    @app.template_filter("tilde")
+    def tilde(path) -> str:
+        """/Users/me/Downloads/x.mp3 -> ~/Downloads/x.mp3"""
+        p, home = str(path), str(Path.home())
+        return "~" + p[len(home):] if p == home or p.startswith(home + "/") else p
 
     @app.get("/")
     def index():
@@ -155,6 +164,19 @@ def create_app(cfg: Config) -> Flask:
         if out.returncode != 0 or not out.stdout.strip():
             return redirect(url_for("attach_page", track_id=track_id))  # cancelled
         return _attach(track_id, Path(out.stdout.strip()))
+
+    @app.post("/reveal/<track_id>")
+    def reveal(track_id: str):
+        """Select the matched file in a Finder window."""
+        st = state()
+        matched, _ = core.match_files(cfg, st)
+        path = next((p for t, p in matched if t.id == track_id), None)
+        if path is not None:
+            try:
+                subprocess.run(["open", "-R", str(path)], timeout=10)
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                flash("Couldn't open Finder.", "err")
+        return redirect(url_for("index") + "#approved")
 
     @app.post("/detach/<track_id>")
     def detach(track_id: str):
