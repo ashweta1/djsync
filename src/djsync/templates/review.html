@@ -276,12 +276,13 @@
         <summary class="pl-head">
           <div class="pl-icon" aria-hidden="true">≡</div>
           <div class="main">
-            <div class="t">{{ g.name }}</div>
+            <div class="t" title="{{ g.name }}">{{ g.name }}</div>
             <div class="a">{{ g.tracks|length }} track{{ "s" if g.tracks|length != 1 }}{% if g.at %} · {{ g.at|ago }}{% endif %}</div>
           </div>
-          {% if g.method == "db" %}<span class="pill ok" title="In rekordbox">✓</span>
+          {% if g.method == "db" %}<span class="pill ok">In rekordbox</span>
           {% elif g.method == "xml" %}<span class="pill warn" title="{{ g.pending }} of {{ g.tracks|length }} tracks not in rekordbox yet">Not in rekordbox yet</span>
-          {% else %}<span class="pill" title="Imported before djsync recorded how">?</span>{% endif %}
+          {% else %}<span class="pill" title="Imported before djsync recorded how">Status unknown</span>{% endif %}
+          <span class="chev" aria-hidden="true"></span>
         </summary>
         <div class="pl-body">
           {% if g.method != "db" %}

@@ -627,3 +627,9 @@ details.menu summary.btn::after { content: " ▾"; }
 /* ✓ / ✕ in the corner of Buy and Import cards, same as Scan */
 .card-top .quick { align-self: flex-start; }
 .card-top .quick form { margin: 0; }
+
+/* playlists: status as a text label, and an arrow that shows it opens/closes */
+.col-body .pl-head .pill { flex: none; }
+.chev { flex: none; width: 14px; color: var(--muted); font-size: 11px; text-align: center; }
+.chev::before { content: "▸"; }
+details.pl[open] .chev::before { content: "▾"; }
