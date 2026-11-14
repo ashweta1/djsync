@@ -11,7 +11,7 @@ from . import files as filemod
 from . import rekordbox, spotify
 from .config import Config
 from .matching import Index, TrackKey, file_score
-from .state import APPROVED, IMPORTED, PENDING, State, Track
+from .state import APPROVED, IMPORTED, IN_REKORDBOX, PENDING, State, Track
 
 
 @dataclass
@@ -19,6 +19,7 @@ class ScanResult:
     liked_checked: int = 0
     new_missing: int = 0
     already_owned: int = 0
+    now_in_rekordbox: int = 0
 
 
 def scan(cfg: Config, st: State, sp=None, library: list | None = None) -> ScanResult:
@@ -38,10 +39,12 @@ def scan(cfg: Config, st: State, sp=None, library: list | None = None) -> ScanRe
         st.tracks[t.id] = t
         res.new_missing += 1
 
-    # Anything still pending that has since appeared in rekordbox: drop it.
+    # Tracks you were still reviewing or waiting on that have since appeared in
+    # rekordbox (added outside djsync): keep them visible, just mark them.
     for t in list(st.by_status(PENDING)) + list(st.by_status(APPROVED)):
         if TrackKey.of(t.artist, t.title) in index:
-            del st.tracks[t.id]
+            t.status = IN_REKORDBOX
+            res.now_in_rekordbox += 1
 
     st.last_scan = datetime.now(timezone.utc).isoformat(timespec="seconds")
     st.save()
@@ -161,8 +164,11 @@ def do_import(cfg: Config, st: State, dry_run: bool = False) -> ImportResult:
         res.method = "xml"
 
     if res.method:
+        now = datetime.now().isoformat(timespec="seconds")
         for t, p in placed:
             t.status, t.file, t.playlist = IMPORTED, str(p), res.playlist
+            t.import_method, t.imported_at = res.method, now
+            t.xml_path = str(res.xml_path) if res.xml_path else ""
         res.matched = placed
     else:
         # Nothing was written: undo the moves/copies so the next import starts clean.

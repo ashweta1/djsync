@@ -12,7 +12,7 @@ from flask import Flask, flash, redirect, render_template, request, url_for
 
 from . import core, files, stores
 from .config import Config
-from .state import APPROVED, IMPORTED, PENDING, SKIPPED, State
+from .state import APPROVED, IMPORTED, IN_REKORDBOX, PENDING, SKIPPED, State
 
 
 def create_app(cfg: Config) -> Flask:
@@ -41,13 +41,20 @@ def create_app(cfg: Config) -> Flask:
         st = state()
         matched, _ = core.match_files(cfg, st)
         found = {t.id: p for t, p in matched}
-        imported = st.by_status(IMPORTED)
+        # Group imports by playlist, newest first.
+        groups: dict[str, dict] = {}
+        for t in sorted(st.by_status(IMPORTED), key=lambda t: t.imported_at, reverse=True):
+            g = groups.setdefault(t.playlist, {"name": t.playlist, "method": t.import_method,
+                                               "xml": t.xml_path, "at": t.imported_at, "tracks": []})
+            g["tracks"].append(t)
+        playlists = list(groups.values())
         return render_template(
             "review.html",
             pending=st.by_status(PENDING),
             approved=st.by_status(APPROVED),
             skipped=st.by_status(SKIPPED),
-            imported=imported[:50],
+            playlists=playlists[:10],
+            in_rekordbox=st.by_status(IN_REKORDBOX),
             found=found,
             last_scan=st.last_scan,
             watch_dir=cfg.watch_dir,
@@ -61,8 +68,12 @@ def create_app(cfg: Config) -> Flask:
             st = state()
             try:
                 r = core.scan(cfg, st)
-                flash(f"Checked {r.liked_checked} liked songs: {r.new_missing} new to review, "
-                      f"{r.already_owned} already in rekordbox.", "ok")
+                msg = (f"Checked {r.liked_checked} liked songs: {r.new_missing} new to review, "
+                       f"{r.already_owned} already in rekordbox.")
+                if r.now_in_rekordbox:
+                    msg += (f" {r.now_in_rekordbox} track(s) you were waiting on are now in "
+                            "rekordbox; see 'Already in rekordbox'.")
+                flash(msg, "ok")
             except Exception as e:
                 flash(f"Scan failed: {e}", "err")
         return redirect(url_for("index"))
@@ -207,15 +218,41 @@ def create_app(cfg: Config) -> Flask:
         if r.error:
             flash(r.error, "err")
         if r.method == "db":
-            flash(f"Added {len(r.matched)} tracks to rekordbox playlist '{r.playlist}'. "
-                  "Open rekordbox and analyse them.", "ok")
+            flash(f"Added {len(r.matched)} tracks to rekordbox playlist '{r.playlist}'.", "ok")
         elif r.method == "xml":
-            flash(f"Wrote {r.xml_path} with playlist '{r.playlist}'. In rekordbox: "
-                  "Preferences > Advanced > Database > rekordbox xml, pick this file, then "
-                  "import the playlist from the 'rekordbox xml' tree.", "ok")
+            flash(f"Saved {len(r.matched)} tracks to an XML file for playlist '{r.playlist}'. "
+                  "They're not in rekordbox yet; see the steps under 'Imported'.", "ok")
         elif not r.matched:
             flash(f"No approved tracks found in {cfg.watch_dir} yet.", "err")
-        return redirect(url_for("index"))
+        return redirect(url_for("index") + "#imported")
+
+    @app.post("/open-rekordbox")
+    def open_rekordbox():
+        """Bring up rekordbox (there's no link that opens a specific playlist)."""
+        for cmd in (["open", "-a", "rekordbox"], ["open", "-b", "com.pioneerdj.rekordboxdj"]):
+            try:
+                if subprocess.run(cmd, capture_output=True, timeout=10).returncode == 0:
+                    break
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                continue
+        else:
+            flash("Couldn't open rekordbox automatically. Open it from Applications.", "err")
+        return redirect(url_for("index") + "#imported")
+
+    @app.post("/reveal-path")
+    def reveal_path():
+        """Show a djsync file (an XML export or an imported track) in Finder."""
+        st = state()
+        path = request.form.get("path", "")
+        allowed = {t.xml_path for t in st.tracks.values()} | {t.file for t in st.tracks.values()}
+        if path and path in allowed and Path(path).exists():
+            try:
+                subprocess.run(["open", "-R", path], timeout=10)
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                flash("Couldn't open Finder.", "err")
+        else:
+            flash("That file isn't there any more.", "err")
+        return redirect(url_for("index") + "#imported")
 
     return app
 

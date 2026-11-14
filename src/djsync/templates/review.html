@@ -96,6 +96,65 @@
     {% endif %}
   </div>
 
+  {% if playlists %}
+  <h2 id="imported">Imported <span class="n">{{ playlists|length }} playlist{{ "s" if playlists|length != 1 }}</span></h2>
+  {% for g in playlists %}
+  <div class="card playlist">
+    <div class="bar">
+      <div class="meta">
+        <div class="t">{{ g.name }}</div>
+        <div class="a">
+          {{ g.tracks|length }} track{{ "s" if g.tracks|length != 1 }}{% if g.at %} · {{ g.at|replace("T", " ") }}{% endif %} ·
+          {% if g.method == "db" %}<span class="ok">In rekordbox</span>
+          {% elif g.method == "xml" %}<span class="warn">Not in rekordbox yet: XML file to import</span>
+          {% else %}<span class="muted">imported before djsync recorded how</span>{% endif %}
+        </div>
+      </div>
+      {% if can_reveal %}
+      <form method="post" action="{{ url_for('open_rekordbox') }}" class="inline"><button class="primary">Open rekordbox</button></form>
+      {% if g.method == "xml" and g.xml %}
+      <form method="post" action="{{ url_for('reveal_path') }}" class="inline"><button name="path" value="{{ g.xml }}">Show XML in Finder</button></form>
+      {% endif %}
+      {% endif %}
+    </div>
+    {% if g.method == "db" %}
+    <p class="howto">In rekordbox, open <b>Playlists</b> in the left sidebar and click <b>{{ g.name }}</b>. Select the tracks and choose <b>Analyze Track</b> to get BPM, key and waveforms. If rekordbox was already open while importing, restart it to see the playlist.</p>
+    {% elif g.method == "xml" %}
+    <p class="howto">To add these to rekordbox:
+      1) <b>Preferences → Advanced → Database → rekordbox xml → Imported Library</b>, choose <code>{{ g.xml|tilde }}</code>.
+      2) <b>Preferences → View → Layout</b>, tick <b>rekordbox xml</b> so it shows in the sidebar.
+      3) In the sidebar open <b>rekordbox xml → Playlists</b>, right-click <b>{{ g.name }}</b> and choose <b>Import Playlist</b>.
+      Or quit rekordbox and click Import again with your next downloads, so djsync can write straight into rekordbox.</p>
+    {% endif %}
+    <details{% if loop.first %} open{% endif %}>
+      <summary class="muted">Tracks</summary>
+      {% for t in g.tracks %}
+      <div class="row">
+        <div class="meta"><div class="t">{{ t.title }}</div><div class="a">{{ t.artist }}</div>
+          {% if t.file %}<div class="filepath">{{ t.file|tilde }}</div>{% endif %}</div>
+        {% if can_reveal and t.file %}<form method="post" action="{{ url_for('reveal_path') }}" class="inline"><button class="link" name="path" value="{{ t.file }}">Show in Finder</button></form>{% endif %}
+      </div>
+      {% endfor %}
+    </details>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if in_rekordbox %}
+  <details>
+    <summary><h2 style="display:inline-flex">Already in rekordbox <span class="n">{{ in_rekordbox|length }}</span></h2></summary>
+    <p class="muted">These were on your list but turned up in your rekordbox library without going through djsync, for example because you added them yourself.</p>
+    <div class="card">
+      {% for t in in_rekordbox %}
+      <div class="row">
+        <div class="meta"><div class="t">{{ t.title }}</div><div class="a">{{ t.artist }}</div></div>
+        <span class="chip found">In rekordbox</span>
+      </div>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+
   {% if skipped %}
   <details>
     <summary><h2 style="display:inline-flex">Skipped <span class="n">{{ skipped|length }}</span></h2></summary>
@@ -110,18 +169,6 @@
   </details>
   {% endif %}
 
-  {% if imported %}
-  <details>
-    <summary><h2 style="display:inline-flex">Recently imported <span class="n">{{ imported|length }}</span></h2></summary>
-    <div class="card">
-      {% for t in imported %}
-      <div class="row">
-        <div class="meta"><div class="t">{{ t.title }}</div><div class="a">{{ t.artist }} → {{ t.playlist }}</div></div>
-      </div>
-      {% endfor %}
-    </div>
-  </details>
-  {% endif %}
 </main>
 <script>
   function boxes() { return document.querySelectorAll('input[name=id]'); }

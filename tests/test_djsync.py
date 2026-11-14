@@ -371,3 +371,44 @@ def test_tilde_filter():
     assert tilde(f"{home}/Downloads/a.mp3") == "~/Downloads/a.mp3"
     assert tilde("/Volumes/USB/a.mp3") == "/Volumes/USB/a.mp3"
     assert tilde(f"{home}x/a.mp3") == f"{home}x/a.mp3"
+
+
+# --- import visibility ----------------------------------------------------------------
+
+def test_tracks_added_to_rekordbox_elsewhere_are_marked_not_dropped(cfg):
+    from djsync.state import IN_REKORDBOX
+    liked = [("1", "Bicep", "Glue"), ("2", "Peggy Gou", "Starry Night")]
+    st = State.load(cfg.state_path)
+    core.scan(cfg, st, sp=FakeSpotify(liked), library=[])
+    st.set_status(["1", "2"], APPROVED)
+    st.save()
+    # you dragged Glue into rekordbox yourself
+    r = core.scan(cfg, State.load(cfg.state_path), sp=FakeSpotify(liked),
+                  library=[LibraryTrack("Bicep", "Glue", "/x.mp3")])
+    assert r.now_in_rekordbox == 1
+    st = State.load(cfg.state_path)
+    assert st.tracks["1"].status == IN_REKORDBOX
+    assert st.tracks["2"].status == APPROVED
+
+
+def test_imported_playlist_shown_with_method(cfg):
+    from djsync.web import create_app
+    _approved(cfg, ("Bicep", "Glue"))
+    (cfg.watch_dir / "Bicep - Glue.mp3").write_bytes(b"")
+    client = create_app(cfg).test_client()
+    html = client.post("/import", follow_redirects=True).get_data(as_text=True)
+    t = State.load(cfg.state_path).tracks["1"]
+    assert t.import_method == "xml" and t.xml_path.endswith(".xml") and t.imported_at
+    assert t.playlist in html
+    assert "Not in rekordbox yet" in html and "Import Playlist" in html
+    assert "Bicep - Glue.mp3" in html  # imported file path listed
+
+
+def test_old_state_files_still_load(cfg):
+    import json
+    cfg.state_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg.state_path.write_text(json.dumps({"tracks": {"1": {
+        "id": "1", "artist": "A", "title": "T", "status": "imported",
+        "playlist": "downloads-2026-11-01", "some_future_field": 1}}}))
+    st = State.load(cfg.state_path)
+    assert st.tracks["1"].import_method == ""

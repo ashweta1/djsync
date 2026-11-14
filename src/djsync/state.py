@@ -9,8 +9,9 @@ from pathlib import Path
 PENDING = "pending"      # liked on Spotify, not in rekordbox, awaiting your review
 APPROVED = "approved"    # you want it - waiting for the purchased file to show up
 SKIPPED = "skipped"      # you deselected it - won't be suggested again
-IMPORTED = "imported"    # file found and added to rekordbox
-STATUSES = (PENDING, APPROVED, SKIPPED, IMPORTED)
+IMPORTED = "imported"    # file found and added to rekordbox by djsync
+IN_REKORDBOX = "in_rekordbox"  # showed up in rekordbox some other way (e.g. you added it yourself)
+STATUSES = (PENDING, APPROVED, SKIPPED, IMPORTED, IN_REKORDBOX)
 
 
 @dataclass
@@ -27,6 +28,9 @@ class Track:
     status: str = PENDING
     file: str = ""
     playlist: str = ""
+    import_method: str = ""   # "db" = written into rekordbox, "xml" = XML file to import
+    xml_path: str = ""
+    imported_at: str = ""
 
 
 @dataclass
@@ -41,7 +45,11 @@ class State:
         if path.exists():
             raw = json.loads(path.read_text())
             st.last_scan = raw.get("last_scan", "")
-            st.tracks = {k: Track(**v) for k, v in raw.get("tracks", {}).items()}
+            known = set(Track.__dataclass_fields__)
+            st.tracks = {
+                k: Track(**{f: x for f, x in v.items() if f in known})
+                for k, v in raw.get("tracks", {}).items()
+            }
         return st
 
     def save(self) -> None:
