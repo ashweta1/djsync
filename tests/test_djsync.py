@@ -412,3 +412,75 @@ def test_old_state_files_still_load(cfg):
         "playlist": "downloads-2026-11-01", "some_future_field": 1}}}))
     st = State.load(cfg.state_path)
     assert st.tracks["1"].import_method == ""
+
+
+# --- retry XML-only imports ----------------------------------------------------------
+
+def _xml_import(cfg):
+    _approved(cfg, ("Bicep", "Glue"), ("Peggy Gou", "Starry Night"))
+    (cfg.watch_dir / "Bicep - Glue.mp3").write_bytes(b"")
+    (cfg.watch_dir / "Peggy Gou - Starry Night.mp3").write_bytes(b"")
+    res = core.do_import(cfg, State.load(cfg.state_path))
+    assert res.method == "xml"
+    return res.playlist
+
+
+def test_retry_adds_xml_playlist_to_rekordbox(cfg, monkeypatch):
+    name = _xml_import(cfg)
+    calls = []
+    monkeypatch.setattr(rekordbox, "rekordbox_running", lambda: False)
+    monkeypatch.setattr(rekordbox, "write_db", lambda c, entries, n: calls.append((entries, n)) or n)
+    st = State.load(cfg.state_path)
+    assert core.retry_targets(st) == [name]
+    r = core.retry_db(cfg, st, name)
+    assert not r.error and r.added == 2
+    entries, used = calls[0]
+    assert used == name
+    assert all(p.parent == cfg.library_dir for p, _, _ in entries)  # files from the DJ folder
+    st = State.load(cfg.state_path)
+    assert {t.import_method for t in st.by_status(IMPORTED)} == {"db"}
+    assert core.retry_targets(st) == []
+
+
+def test_retry_refuses_while_rekordbox_open(cfg, monkeypatch):
+    name = _xml_import(cfg)
+    monkeypatch.setattr(rekordbox, "rekordbox_running", lambda: True)
+    r = core.retry_db(cfg, State.load(cfg.state_path), name)
+    assert "Quit rekordbox" in r.error
+    assert State.load(cfg.state_path).tracks["1"].import_method == "xml"
+
+
+def test_retry_skips_missing_files(cfg, monkeypatch):
+    name = _xml_import(cfg)
+    Path(State.load(cfg.state_path).tracks["2"].file).unlink()
+    monkeypatch.setattr(rekordbox, "rekordbox_running", lambda: False)
+    monkeypatch.setattr(rekordbox, "write_db", lambda c, entries, n: n)
+    st = State.load(cfg.state_path)
+    r = core.retry_db(cfg, st, name)
+    assert r.added == 1 and [t.id for t in r.missing] == ["2"]
+
+
+def test_retry_old_import_already_in_rekordbox(cfg, monkeypatch):
+    st = State(path=cfg.state_path)
+    st.tracks["1"] = Track(id="1", artist="A", title="T", status=IMPORTED, playlist="downloads-x",
+                           file=str(cfg.watch_dir / "a.mp3"))
+    st.save()
+    monkeypatch.setattr(rekordbox, "rekordbox_running", lambda: False)
+    monkeypatch.setattr(rekordbox, "playlist_exists", lambda c, n: True)
+    r = core.retry_db(cfg, State.load(cfg.state_path), "downloads-x")
+    assert r.already and State.load(cfg.state_path).tracks["1"].import_method == "db"
+
+
+def test_retry_button_and_cli(cfg, monkeypatch, capsys):
+    from djsync import cli, config as cfgmod
+    from djsync.web import create_app
+    name = _xml_import(cfg)
+    client = create_app(cfg).test_client()
+    assert "Retry: add to rekordbox" in client.get("/").get_data(as_text=True)
+    monkeypatch.setattr(rekordbox, "rekordbox_running", lambda: False)
+    monkeypatch.setattr(rekordbox, "write_db", lambda c, entries, n: n)
+    monkeypatch.setattr(cfgmod, "load", lambda: cfg)
+    assert cli.main(["import", "--retry"]) == 0
+    assert f"{name}: added 2 tracks" in capsys.readouterr().out
+    html = client.get("/").get_data(as_text=True)
+    assert "In rekordbox" in html and "Retry: add to rekordbox" not in html

@@ -226,6 +226,23 @@ def create_app(cfg: Config) -> Flask:
             flash(f"No approved tracks found in {cfg.watch_dir} yet.", "err")
         return redirect(url_for("index") + "#imported")
 
+    @app.post("/retry-db")
+    def retry_db():
+        with lock:
+            st = state()
+            r = core.retry_db(cfg, st, request.form.get("playlist", ""))
+        if r.error:
+            flash(r.error, "err")
+        elif r.already:
+            flash(f"'{r.playlist}' is already in rekordbox.", "ok")
+        else:
+            msg = f"Added {r.added} tracks to rekordbox playlist '{r.playlist}'."
+            if r.missing:
+                msg += (f" {len(r.missing)} file(s) were missing and were left out: "
+                        + ", ".join(f"{t.artist} - {t.title}" for t in r.missing))
+            flash(msg, "ok")
+        return redirect(url_for("index") + "#imported")
+
     @app.post("/open-rekordbox")
     def open_rekordbox():
         """Bring up rekordbox (there's no link that opens a specific playlist)."""

@@ -81,6 +81,14 @@ def _unique_playlist_name(existing: set[str], name: str) -> str:
     return f"{name}-{n}"
 
 
+def playlist_exists(cfg: Config, name: str) -> bool:
+    db = _open_db(cfg)
+    try:
+        return db.get_playlist(Name=name).first() is not None
+    finally:
+        db.close()
+
+
 def write_db(cfg: Config, files: list[tuple[Path, str, str]], playlist_name: str) -> str:
     """Add files to rekordbox's database and put them in a new playlist.
 

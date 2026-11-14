@@ -40,7 +40,30 @@ def cmd_review(cfg, args) -> int:
     return 0
 
 
+def cmd_retry(cfg) -> int:
+    st = State.load(cfg.state_path)
+    targets = core.retry_targets(st)
+    if not targets:
+        print("Every imported playlist is already in rekordbox.")
+        return 0
+    failed = False
+    for name in targets:
+        r = core.retry_db(cfg, st, name)
+        if r.error:
+            print(f"{name}: {r.error}", file=sys.stderr)
+            failed = True
+        elif r.already:
+            print(f"{name}: already in rekordbox.")
+        else:
+            print(f"{name}: added {r.added} tracks to rekordbox.")
+            for t in r.missing:
+                print(f"  missing file, left out: {t.artist} - {t.title} ({t.file})")
+    return 1 if failed else 0
+
+
 def cmd_import(cfg, args) -> int:
+    if args.retry:
+        return cmd_retry(cfg)
     while True:
         st = State.load(cfg.state_path)
         r = core.do_import(cfg, st, dry_run=args.dry_run)
@@ -70,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--no-browser", action="store_true")
     i = sub.add_parser("import", help="import purchased files into a downloads-<date> playlist")
     i.add_argument("--dry-run", action="store_true", help="only show which files match")
+    i.add_argument("--retry", action="store_true",
+                   help="add playlists that were only saved as XML (rekordbox was open) into rekordbox")
     i.add_argument("--watch", action="store_true", help="keep checking until all approved are imported")
     i.add_argument("--interval", type=int, default=30, help="seconds between checks with --watch")
     args = p.parse_args(argv)

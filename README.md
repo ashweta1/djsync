@@ -99,6 +99,7 @@ djsync scan              # list liked songs that aren't in rekordbox
 djsync import --dry-run  # show which downloaded files match approved tracks
 djsync import            # import them and create the downloads-<date> playlist
 djsync import --watch    # keep checking every 30s until all approved tracks arrive
+djsync import --retry    # rekordbox was open last time? quit it, then add those playlists into rekordbox
 ```
 
 ### How the playlist is written
@@ -110,6 +111,11 @@ djsync import --watch    # keep checking every 30s until all approved tracks arr
 | `auto` (default) | Writes directly to rekordbox's database. If that fails, it writes an XML file instead. |
 | `db` | Database only. **rekordbox must be closed.** `master.db` is backed up to `~/.djsync/backups/` before every write. |
 | `xml` | Writes `~/.djsync/xml/downloads-<date>.xml`. In rekordbox, go to **Preferences → Advanced → Database → rekordbox xml** and choose this file. The playlist then appears under **rekordbox xml** in the sidebar: right-click it and choose **Import Playlist**. |
+
+If rekordbox was open during an import, djsync saves the playlist as XML
+and the **Imported** section says **"Not in rekordbox yet"**. Quit rekordbox
+and click **Retry: add to rekordbox** (or run `djsync import --retry`). It adds
+the files already in your DJ folder to rekordbox under the same playlist name.
 
 After importing, open the playlist in rekordbox and analyse the new tracks to
 get their BPM, key and waveforms.

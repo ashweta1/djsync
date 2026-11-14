@@ -110,8 +110,11 @@
           {% else %}<span class="muted">imported before djsync recorded how</span>{% endif %}
         </div>
       </div>
+      {% if g.method != "db" %}
+      <form method="post" action="{{ url_for('retry_db') }}" class="inline"><button class="primary" name="playlist" value="{{ g.name }}" title="Quit rekordbox first">Retry: add to rekordbox</button></form>
+      {% endif %}
       {% if can_reveal %}
-      <form method="post" action="{{ url_for('open_rekordbox') }}" class="inline"><button class="primary">Open rekordbox</button></form>
+      <form method="post" action="{{ url_for('open_rekordbox') }}" class="inline"><button {% if g.method == "db" %}class="primary"{% endif %}>Open rekordbox</button></form>
       {% if g.method == "xml" and g.xml %}
       <form method="post" action="{{ url_for('reveal_path') }}" class="inline"><button name="path" value="{{ g.xml }}">Show XML in Finder</button></form>
       {% endif %}
@@ -120,11 +123,12 @@
     {% if g.method == "db" %}
     <p class="howto">In rekordbox, open <b>Playlists</b> in the left sidebar and click <b>{{ g.name }}</b>. Select the tracks and choose <b>Analyze Track</b> to get BPM, key and waveforms. If rekordbox was already open while importing, restart it to see the playlist.</p>
     {% elif g.method == "xml" %}
-    <p class="howto">To add these to rekordbox:
+    <p class="howto"><b>Quickest:</b> quit rekordbox, then click <b>Retry: add to rekordbox</b>.</p>
+    <p class="howto">Or import the XML yourself:
       1) <b>Preferences → Advanced → Database → rekordbox xml → Imported Library</b>, choose <code>{{ g.xml|tilde }}</code>.
       2) <b>Preferences → View → Layout</b>, tick <b>rekordbox xml</b> so it shows in the sidebar.
       3) In the sidebar open <b>rekordbox xml → Playlists</b>, right-click <b>{{ g.name }}</b> and choose <b>Import Playlist</b>.
-      Or quit rekordbox and click Import again with your next downloads, so djsync can write straight into rekordbox.</p>
+</p>
     {% endif %}
     <details{% if loop.first %} open{% endif %}>
       <summary class="muted">Tracks</summary>

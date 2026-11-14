@@ -181,3 +181,53 @@ def do_import(cfg: Config, st: State, dry_run: bool = False) -> ImportResult:
                 shutil.move(dst, src)
     st.save()
     return res
+
+
+@dataclass
+class RetryResult:
+    playlist: str = ""
+    added: int = 0
+    missing: list[Track] = field(default_factory=list)
+    already: bool = False
+    error: str = ""
+
+
+def retry_targets(st: State) -> list[str]:
+    """Playlists that were saved to XML (or recorded before djsync tracked how)."""
+    names = {t.playlist for t in st.by_status(IMPORTED) if t.import_method != "db" and t.playlist}
+    return sorted(names)
+
+
+def retry_db(cfg: Config, st: State, playlist: str) -> RetryResult:
+    """Add an XML-only import to rekordbox's database, using the files already in your DJ folder."""
+    res = RetryResult(playlist=playlist)
+    tracks = [t for t in st.by_status(IMPORTED)
+              if t.playlist == playlist and t.import_method != "db"]
+    if not tracks:
+        res.error = f"Nothing to retry for '{playlist}'."
+        return res
+    if rekordbox.rekordbox_running():
+        res.error = "rekordbox is still open. Quit rekordbox (rekordbox menu → Quit) and try again."
+        return res
+    try:
+        # Imports from before djsync recorded the method may already be in rekordbox.
+        if all(not t.import_method for t in tracks) and rekordbox.playlist_exists(cfg, playlist):
+            for t in tracks:
+                t.import_method = "db"
+            st.save()
+            res.already = True
+            return res
+        present = [t for t in tracks if t.file and Path(t.file).is_file()]
+        res.missing = [t for t in tracks if t not in present]
+        if not present:
+            res.error = "None of this playlist's files are where djsync put them any more."
+            return res
+        name = rekordbox.write_db(cfg, [(Path(t.file), t.artist, t.title) for t in present], playlist)
+    except Exception as e:
+        res.error = f"Could not write to rekordbox: {e}"
+        return res
+    for t in present:
+        t.playlist, t.import_method = name, "db"
+    st.save()
+    res.playlist, res.added = name, len(present)
+    return res
