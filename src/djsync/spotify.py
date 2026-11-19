@@ -101,3 +101,23 @@ def playlist_tracks(sp, playlist_id: str, name: str = "") -> Iterator[Track]:
         if not page.get("next"):
             return
         offset += len(items)
+
+
+def search_track(sp, artist: str, title: str, source: str = "Added by hand") -> Track | None:
+    """Best Spotify match for a track you typed in, or None if Spotify doesn't have it."""
+    from datetime import datetime, timezone
+
+    from .matching import TrackKey, similar
+
+    q = f'track:"{title}" artist:"{artist}"' if artist else title
+    try:
+        items = (sp.search(q=q, type="track", limit=10).get("tracks") or {}).get("items") or []
+    except Exception:
+        return None
+    want = TrackKey.of(artist, title)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    for item in items:
+        got = TrackKey.of(", ".join(a["name"] for a in item.get("artists", [])), item.get("name", ""))
+        if similar(want, got, 80) if artist else similar(TrackKey("", want.title), TrackKey("", got.title), 85):
+            return _track(item, now, source)
+    return None

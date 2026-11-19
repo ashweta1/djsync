@@ -77,6 +77,17 @@ A card that just moved is highlighted in its new column. Skipped tracks, and
 ones that reached rekordbox some other way, are under **Archive** in the
 header. On a phone, swipe between the columns.
 
+### Adding a track by hand
+
+Heard something in a club, or it's not on Spotify? Click **＋ Add tracks** at
+the top of the Buy column and type it, like `Fear of Water by SYML` or
+`SYML - Fear of Water`. You can paste several, one per line. The track goes
+straight to Buy and the research agent starts on it. If Spotify is connected,
+djsync looks the track up there first to get its exact recording ID (ISRC),
+length and artwork, which makes the Beatport match more reliable. Tracks
+already in your rekordbox library, or already on the board, aren't added
+twice.
+
 ### Choosing what to scan
 
 **Scan Spotify** reads your **Liked Songs** by default. Click the **▾** next

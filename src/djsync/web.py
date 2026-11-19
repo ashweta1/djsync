@@ -344,6 +344,35 @@ def create_app(cfg: Config) -> Flask:
             start_research(approved_now)
         return back(approved_now)
 
+    @app.post("/add")
+    def add_tracks():
+        """Tracks typed in by hand ('Fear of Water by SYML'), one per line, straight to Buy."""
+        from . import rekordbox, spotify
+
+        text = request.form.get("tracks", "")
+        sp = None
+        if cfg.client_id and cfg.spotify_cache.exists():  # only if already logged in: no pop-ups
+            try:
+                sp = spotify.client(cfg)
+            except BaseException:
+                sp = None
+        try:
+            library = rekordbox.read_library(cfg)
+        except Exception:
+            library = None  # can't check rekordbox right now; add anyway
+        with lock:
+            r = core.add_manual(cfg, state(), text, sp=sp, library=library)
+        if r.in_rekordbox:
+            flash("Already in your rekordbox library, not added: " + "; ".join(r.in_rekordbox), "err")
+        if r.already_listed:
+            flash("Already on the board: " + "; ".join(r.already_listed), "err")
+        if r.unreadable:
+            flash("Couldn't read: " + "; ".join(r.unreadable) + ". Try 'Title by Artist'.", "err")
+        ids = [t.id for t in r.added]
+        if ids and cfg.agent_enabled and cfg.agent_auto:
+            start_research(ids)
+        return back(ids)
+
     @app.post("/research")
     def research_route():
         """Find the best store link: one track (id=...) or every approved track without one."""

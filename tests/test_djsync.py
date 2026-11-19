@@ -1500,3 +1500,79 @@ def test_certificate_error_is_explained():
         raise urllib.error.URLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed")
     r = beatport.search("Bicep", "Glue", opener)
     assert "certificates" in r.error and r.candidates == []
+
+
+# --- adding tracks by hand -------------------------------------------------------------------
+
+@pytest.mark.parametrize("line,expected", [
+    ("Fear of Water by SYML", ("SYML", "Fear of Water")),
+    ("SYML - Fear of Water", ("SYML", "Fear of Water")),
+    ("SYML – Fear of Water", ("SYML", "Fear of Water")),
+    ('"Stand By Me by Ben E. King"', ("Ben E. King", "Stand By Me")),
+    ("Glue", ("", "Glue")),
+    ("   ", ("", "")),
+])
+def test_parse_line(line, expected):
+    assert core.parse_line(line) == expected
+
+
+class FakeSpotifySearch:
+    def search(self, q, type, limit):
+        if "Fear of Water" in q:
+            return {"tracks": {"items": [
+                {"id": "sp1", "name": "Fear of the Water", "artists": [{"name": "Someone"}], "album": {}},
+                {"id": "sp2", "name": "Fear of Water", "artists": [{"name": "SYML"}],
+                 "album": {"name": "In My Body", "images": [{"url": "https://img/x.jpg"}]},
+                 "external_ids": {"isrc": "USX123"}, "duration_ms": 240000, "type": "track"},
+            ]}}
+        return {"tracks": {"items": []}}
+
+
+def test_add_manual_uses_spotify_details_and_goes_to_buy(cfg):
+    st = State.load(cfg.state_path)
+    r = core.add_manual(cfg, st, "Fear of Water by SYML\nUnknown Artist - Rare Dub\n\nbad", sp=FakeSpotifySearch(),
+                        library=[LibraryTrack("Bicep", "Glue", "/x.mp3")])
+    ids = [t.id for t in r.added]
+    assert ids[0] == "sp2" and ids[1].startswith("manual-")     # Spotify match vs typed-in only
+    t = State.load(cfg.state_path).tracks["sp2"]
+    assert (t.status, t.isrc, t.album, t.source) == (APPROVED, "USX123", "In My Body", "Added by hand")
+    rare = State.load(cfg.state_path).tracks[ids[1]]
+    assert (rare.artist, rare.title, rare.status) == ("Unknown Artist", "Rare Dub", APPROVED)
+    assert len(r.added) == 3                                    # "bad" is read as a title on its own
+
+
+def test_add_manual_skips_what_you_already_have(cfg):
+    st = State.load(cfg.state_path)
+    st.tracks["p1"] = Track(id="p1", artist="Peggy Gou", title="Starry Night", status=PENDING)
+    st.tracks["a1"] = Track(id="a1", artist="Overmono", title="So U Kno", status=APPROVED)
+    st.save()
+    r = core.add_manual(cfg, State.load(cfg.state_path),
+                        "Glue by Bicep\nOvermono - So U Kno\nStarry Night by Peggy Gou",
+                        library=[LibraryTrack("Bicep", "Glue", "/x.mp3")])
+    assert r.in_rekordbox == ["Bicep - Glue"] and r.already_listed == ["Overmono - So U Kno"]
+    assert [t.id for t in r.added] == ["p1"]                     # was in Scan: moved to Buy
+    assert State.load(cfg.state_path).tracks["p1"].status == APPROVED
+
+
+def test_add_tracks_on_the_board(cfg, monkeypatch):
+    from djsync.web import create_app
+    started = []
+    monkeypatch.setattr(research, "research_many", lambda c, tracks, on_done=None: started.extend(t.id for t in tracks))
+    monkeypatch.setattr(core.rekordbox, "read_library", lambda c: [LibraryTrack("Bicep", "Glue", "/x")])
+    client = create_app(cfg).test_client()
+    html = client.get("/").get_data(as_text=True)
+    assert "＋ Add tracks" in html and 'name="tracks"' in html
+    r = client.post("/add", data={"tracks": "Fear of Water by SYML\nGlue by Bicep"})
+    st = State.load(cfg.state_path)
+    [new] = [t for t in st.tracks.values() if t.title == "Fear of Water"]
+    assert r.headers["Location"].endswith(f"/?hl={new.id}")
+    import time
+    for _ in range(50):
+        if started:
+            break
+        time.sleep(0.02)
+    assert started == [new.id]                                   # research starts right away
+    html = client.get(r.headers["Location"]).get_data(as_text=True)
+    buy = html.split('id="c-buy"')[1].split('id="c-import"')[0]
+    assert "Fear of Water" in buy and "added by hand" in buy
+    assert "Already in your rekordbox library, not added: Bicep - Glue" in html

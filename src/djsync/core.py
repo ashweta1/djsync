@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -292,4 +293,80 @@ def retry_db(cfg: Config, st: State, playlist: str) -> RetryResult:
         t.playlist, t.import_method = name, "db"
     st.save()
     res.playlist, res.added = name, len(present)
+    return res
+
+
+# ---------------------------------------------------------------- tracks typed in by hand
+
+_BY = re.compile(r"\s+by\s+", re.I)
+_DASH = re.compile(r"\s+[-\u2013\u2014]\s+")
+
+
+def parse_line(line: str) -> tuple[str, str]:
+    """'Fear of Water by SYML' / 'SYML - Fear of Water' -> (artist, title).
+
+    Without 'by' or a dash, the whole line is taken as the title.
+    """
+    s = line.strip().strip('"\u201c\u201d\'')
+    if not s:
+        return "", ""
+    last_by = None
+    for last_by in _BY.finditer(s):
+        pass
+    if last_by:  # split at the last " by ", so "Stand By Me by Ben E. King" keeps its title
+        return s[last_by.end():].strip(), s[:last_by.start()].strip()
+    parts = _DASH.split(s, maxsplit=1)
+    if len(parts) == 2:
+        return parts[0].strip(), parts[1].strip()
+    return "", s
+
+
+@dataclass
+class AddResult:
+    added: list[Track] = field(default_factory=list)
+    in_rekordbox: list[str] = field(default_factory=list)   # "Artist - Title"
+    already_listed: list[str] = field(default_factory=list)
+    unreadable: list[str] = field(default_factory=list)
+
+
+def add_manual(cfg: Config, st: State, text: str, sp=None, library: list | None = None) -> AddResult:
+    """Add tracks you typed in (one per line) straight to Buy.
+
+    With Spotify connected (``sp``), each one is looked up there for its ISRC, length
+    and artwork, which makes the Beatport match much more reliable.
+    """
+    import uuid
+
+    res = AddResult()
+    index = Index([TrackKey.of(t.artist, t.title) for t in library], cfg.threshold) if library else None
+    for line in text.splitlines():
+        artist, title = parse_line(line)
+        if not title:
+            if line.strip():
+                res.unreadable.append(line.strip())
+            continue
+        t = spotify.search_track(sp, artist, title) if sp else None
+        if t is None:
+            t = Track(id=f"manual-{uuid.uuid4().hex[:10]}", artist=artist, title=title,
+                      added_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                      source="Added by hand")
+        name = f"{t.artist} - {t.title}" if t.artist else t.title
+        if index is not None and TrackKey.of(t.artist, t.title) in index:
+            res.in_rekordbox.append(name)
+            continue
+        key = TrackKey.of(t.artist, t.title)
+        dup = st.tracks.get(t.id) or next(
+            (x for x in st.tracks.values() if TrackKey.of(x.artist, x.title) == key), None)
+        if dup is not None and dup.status in (APPROVED, IMPORTED):
+            res.already_listed.append(name)
+            continue
+        if dup is not None and dup.status == IN_REKORDBOX:
+            res.in_rekordbox.append(name)
+            continue
+        if dup is not None:            # it was in Scan or skipped: bring that card over
+            t = dup
+        t.status = APPROVED
+        st.tracks[t.id] = t
+        res.added.append(t)
+    st.save()
     return res
