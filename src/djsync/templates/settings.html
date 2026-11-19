@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Settings · djsync{% endblock %}
+
+{% block header_actions %}
+<div class="top-actions">
+  <a class="toplink" href="{{ url_for('setup_page') }}">Setup checklist</a>
+  <a class="toplink" href="{{ url_for('index') }}">Board →</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<section class="head">
+  <div>
+    <h1>Settings</h1>
+    <p class="muted">Changes apply straight away. They're saved in <code>{{ config_path|tilde }}</code>.</p>
+  </div>
+</section>
+
+<form method="post" action="{{ url_for('settings_save') }}" class="settings">
+
+  <fieldset id="spotify">
+    <legend>Spotify</legend>
+    <label class="field">
+      <span>Client ID</span>
+      <input class="search" name="client_id" value="{{ cfg.client_id }}" autocomplete="off" placeholder="From developer.spotify.com/dashboard">
+      <small class="muted">From your app on <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">Spotify's developer dashboard ↗</a>. Its Redirect URI must be <code>{{ cfg.redirect_uri }}</code>. Changing it means logging in to Spotify again.</small>
+    </label>
+  </fieldset>
+
+  <fieldset id="folders">
+    <legend>Folders</legend>
+    <label class="field">
+      <span>Downloads folder</span>
+      <input class="search" name="watch_dir" value="{{ cfg.watch_dir|tilde }}">
+      <small class="muted">Where your store purchases land. djsync looks in all its subfolders, and moves files out of it on import.</small>
+    </label>
+    <label class="field">
+      <span>Also look in</span>
+      <textarea class="search" name="extra_dirs" rows="2">{% for d in cfg.extra_dirs %}{{ d|tilde }}
+{% endfor %}</textarea>
+      <small class="muted">One folder per line, e.g. <code>~/Music</code> for Apple Music purchases. Files here are copied, never moved.</small>
+    </label>
+    <label class="field narrow">
+      <span>…but only files from the last</span>
+      <span class="inline-input"><input class="search" type="number" name="recent_days" min="1" max="3650" value="{{ cfg.recent_days }}"> days</span>
+    </label>
+    <label class="field">
+      <span>DJ music folder</span>
+      <input class="search" name="library_dir" value="{{ cfg.library_dir|tilde }}">
+      <small class="muted">Where imported tracks are kept.</small>
+    </label>
+    <label class="check"><input type="checkbox" name="move_files" {% if cfg.move_files %}checked{% endif %}> Move files out of the Downloads folder (otherwise copy them)</label>
+  </fieldset>
+
+  <fieldset id="rekordbox">
+    <legend>rekordbox</legend>
+    <label class="field">
+      <span>Playlist name</span>
+      <span class="inline-input"><input class="search" name="playlist_prefix" value="{{ cfg.playlist_prefix }}"> <code>2026-11-19</code></span>
+      <small class="muted">Each day's imports go into one playlist with this name and the date.</small>
+    </label>
+    <div class="field">
+      <span>How to add tracks</span>
+      <label class="radio"><input type="radio" name="rekordbox_mode" value="auto" {% if cfg.rekordbox_mode == "auto" %}checked{% endif %}> Straight into rekordbox, or an XML file if rekordbox is open <span class="muted">(recommended)</span></label>
+      <label class="radio"><input type="radio" name="rekordbox_mode" value="db" {% if cfg.rekordbox_mode == "db" %}checked{% endif %}> Straight into rekordbox only</label>
+      <label class="radio"><input type="radio" name="rekordbox_mode" value="xml" {% if cfg.rekordbox_mode == "xml" %}checked{% endif %}> XML file only <span class="muted">(never touches rekordbox's database)</span></label>
+    </div>
+    <label class="field">
+      <span>Library file <span class="muted">(only if djsync can't find it)</span></span>
+      <input class="search" name="rekordbox_db_path" value="{{ cfg.rekordbox_db_path }}" placeholder="Found automatically">
+    </label>
+  </fieldset>
+
+  <fieldset id="agent">
+    <legend>Research agent</legend>
+    <label class="check"><input type="checkbox" name="agent_enabled" {% if cfg.agent_enabled %}checked{% endif %}> Find the best place to buy each track</label>
+    <label class="check"><input type="checkbox" name="agent_auto" {% if cfg.agent_auto %}checked{% endif %}> Start as soon as I approve a track</label>
+    <label class="check"><input type="checkbox" name="beatport_direct" {% if cfg.beatport_direct %}checked{% endif %}> Search Beatport's own catalogue first</label>
+    <div class="field">
+      <span>Run it with</span>
+      <label class="radio"><input type="radio" name="agent_backend" value="auto" {% if cfg.agent_backend == "auto" %}checked{% endif %}> Whatever's available <span class="muted">(Claude Code, else an API key)</span></label>
+      <label class="radio"><input type="radio" name="agent_backend" value="claude-code" {% if cfg.agent_backend == "claude-code" %}checked{% endif %}> Claude Code <span class="muted">(uses your Claude Pro/Max plan)</span></label>
+      <label class="radio"><input type="radio" name="agent_backend" value="api" {% if cfg.agent_backend == "api" %}checked{% endif %}> Claude API key <span class="muted">(ANTHROPIC_API_KEY, pay per use)</span></label>
+    </div>
+    <label class="field narrow">
+      <span>Claude Code model</span>
+      <select class="search" name="claude_code_model">
+        {% for v, label in [("sonnet", "Sonnet (default)"), ("haiku", "Haiku (uses less of your plan)"), ("opus", "Opus (most thorough)"), ("", "Claude Code's default")] %}
+        <option value="{{ v }}" {% if cfg.claude_code_model == v %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span>Claude Code location <span class="muted">(only if it isn't found)</span></span>
+      <input class="search" name="claude_path" value="{{ cfg.claude_path }}" placeholder="Found automatically">
+    </label>
+  </fieldset>
+
+  <fieldset id="stores">
+    <legend>Stores</legend>
+    <div class="store-checks">
+      {% for key, (name, _) in all_stores.items() %}
+      <label class="check"><input type="checkbox" name="stores" value="{{ key }}" {% if key in cfg.stores %}checked{% endif %}> {{ name }}</label>
+      {% endfor %}
+    </div>
+    <small class="muted">Search links shown on each track.</small>
+  </fieldset>
+
+  <details class="advanced">
+    <summary>Matching (advanced)</summary>
+    <label class="field narrow">
+      <span>Library match strictness</span>
+      <input class="search" type="number" name="threshold" min="50" max="100" value="{{ cfg.threshold }}">
+      <small class="muted">Higher = a liked track must match more closely to count as already in rekordbox.</small>
+    </label>
+    <label class="field narrow">
+      <span>File match strictness</span>
+      <input class="search" type="number" name="file_threshold" min="40" max="100" value="{{ cfg.file_threshold }}">
+      <small class="muted">Lower it if downloaded files aren't found; raise it if the wrong file gets picked.</small>
+    </label>
+  </details>
+
+  <div class="settings-foot">
+    <button class="btn primary" type="submit">Save settings</button>
+    {% if saved %}<span class="saved" role="status">✓ Saved</span>{% endif %}
+  </div>
+</form>
+{% endblock %}

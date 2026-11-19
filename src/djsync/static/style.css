@@ -695,3 +695,62 @@ details.pl[open] .chev::before { content: "▾"; }
   .col-head.has-btn .col-sub { grid-column: 2 / 4; }
 }
 .card-foot { flex-wrap: wrap; row-gap: 6px; }
+
+/* ---------- setup bar on the board ---------- */
+.setup-bar {
+  display: flex; align-items: center; gap: 12px; justify-content: space-between; margin-bottom: 12px;
+  padding: 10px 14px; border-radius: 12px; text-decoration: none; color: var(--text);
+  background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.setup-bar:hover { text-decoration: none; border-color: var(--accent); }
+.setup-go { font-weight: 600; color: var(--accent-2); white-space: nowrap; }
+.setup-bar + .board { height: calc(100vh - 60px - 32px - 54px); }
+
+/* ---------- setup page ---------- */
+.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; max-width: 760px; }
+.step-card { background: var(--panel); border: 1px solid var(--card-line); border-radius: 14px; padding: 16px; }
+.step-card.done { opacity: 0.8; }
+.step-head { display: flex; gap: 12px; align-items: flex-start; }
+.step-head h2 { font-size: 16px; }
+.step-mark {
+  flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  font: 700 13px/1 ui-monospace, Menlo, monospace; border: 1.5px solid var(--line-2); color: var(--muted);
+}
+.step-card.done .step-mark { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
+.step-body { margin: 12px 0 0 40px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+.step-body.quiet { margin-top: 4px; }
+.howto-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.copy { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; padding: 4px 4px 4px 10px;
+        border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line); max-width: 100%; }
+.copy code { overflow-wrap: anywhere; }
+.row-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.row-btns form { margin: 0; }
+
+/* ---------- settings page ---------- */
+.settings { max-width: 760px; display: flex; flex-direction: column; gap: 14px; }
+.settings fieldset { margin: 0; padding: 14px 16px 16px; border: 1px solid var(--card-line); border-radius: 14px;
+                     background: var(--panel); display: flex; flex-direction: column; gap: 12px; }
+.settings legend { padding: 0 6px; font-weight: 700; font-size: 15px; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field > span:first-child { font-size: 13px; font-weight: 600; }
+.field small { font-size: 12px; line-height: 1.45; }
+.field.narrow .search { max-width: 260px; }
+.field textarea { resize: vertical; font: 13px ui-monospace, Menlo, monospace; }
+.inline-input { display: flex; align-items: center; gap: 8px; }
+.inline-input .search { flex: 0 1 260px; min-width: 0; }
+.check, .radio { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+.check input, .radio input { accent-color: var(--primary); width: 16px; height: 16px; margin: 0; flex: none; }
+.store-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 12px; }
+.advanced { border: 1px solid var(--card-line); border-radius: 14px; background: var(--panel); padding: 12px 16px; }
+.advanced summary { cursor: pointer; font-weight: 600; }
+.advanced[open] { display: flex; flex-direction: column; gap: 12px; }
+.settings-foot { display: flex; align-items: center; gap: 12px; position: sticky; bottom: 0; padding: 12px 0;
+                 background: linear-gradient(transparent, var(--bg) 30%); }
+.saved { color: var(--accent-2); font-weight: 600; }
+select.search { appearance: auto; }
+textarea.search, select.search {
+  font: inherit; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-2);
+  background: var(--panel); color: var(--text); width: 100%;
+}
+textarea.search { font: 13px/1.5 ui-monospace, Menlo, monospace; }
+textarea.search:focus, select.search:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }

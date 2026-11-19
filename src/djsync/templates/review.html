@@ -7,6 +7,7 @@
 
 {% block header_actions %}
 <div class="top-actions">
+  <a class="toplink" href="{{ url_for('settings_page') }}" title="Settings">⚙ Settings</a>
   <a class="toplink {% if view == 'archive' %}on{% endif %}" href="{{ url_for('index', view='archive') if view != 'archive' else url_for('index') }}">
     {% if view == 'archive' %}← Board{% else %}Archive{% if skipped or in_rekordbox %} <b class="badge">{{ skipped|length + in_rekordbox|length }}</b>{% endif %}{% endif %}
   </a>
@@ -14,6 +15,12 @@
 {% endblock %}
 
 {% block content %}
+{% if needs_setup %}
+<a class="setup-bar" href="{{ url_for('setup_page') }}">
+  <span><b>Finish setting up djsync</b> to scan your Spotify: connect Spotify and check your rekordbox library.</span>
+  <span class="setup-go">Set up →</span>
+</a>
+{% endif %}
 {% if view == "board" %}
 <div class="board" data-focus="buy">
   <script>try { const f = localStorage.getItem('djsync-focus'); if (f) document.currentScript.parentElement.dataset.focus = f; } catch (e) {}</script>

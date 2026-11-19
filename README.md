@@ -14,6 +14,48 @@ Spotify Liked Songs ──► compare with rekordbox ──► review page (unti
 djsync doesn't download from streaming services. You buy the tracks yourself,
 and djsync finds the files in your downloads folder and imports them.
 
+## Getting started (for friends)
+
+You need a Mac with **rekordbox 6 or 7** and a **Spotify** account. A **Claude
+Pro or Max** plan is optional; it lets djsync find the best place to buy each
+track.
+
+1. **Install.** Open Terminal (press ⌘ Space, type *Terminal*, press Return),
+   paste this line and press Return:
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/ashweta1/djsync/main/install.sh | bash
+   ```
+
+   If it says you need Python, install it from
+   [python.org/downloads](https://www.python.org/downloads/), then paste the
+   line again. Everything goes into your home folder, and you won't be asked
+   for an admin password.
+2. **Open djsync.** Double-click **djsync** on your Desktop. The first time,
+   macOS may say it can't check the file. If so, right-click it, choose
+   **Open**, then **Open** again. A Terminal window opens, which you keep open
+   while using djsync, and your browser shows djsync.
+3. **Follow the setup page.** It walks you through creating a free Spotify app
+   (about five minutes), connecting Spotify, and checking your rekordbox
+   library. Each step shows ✓ when it's done.
+4. **Use it.** On the board, click **Scan Spotify**.
+
+**To update**, paste the install line into Terminal again. Your settings and
+track list are kept. **Settings** in the top bar has all the options: folders,
+playlist name, which stores to show, and the research agent.
+
+### Optional: the research agent
+
+With a Claude Pro or Max plan, install Claude Code (paste this into Terminal):
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+Then run `claude` once, type `/login` and sign in. The setup page shows ✓ once
+djsync can find it. If you'd rather pay per use with a Claude API key, choose
+**Claude API key** under Settings → Research agent and set `ANTHROPIC_API_KEY`.
+
 ## The board
 
 `djsync review` opens a board with four columns. Each track is a card that
@@ -109,70 +151,22 @@ djsync now also asks to read your playlists.
 6. **Import**: djsync moves the matched files into your music folder, adds
    them to rekordbox and adds them to the day's `djsync-downloads-<date>` playlist.
 
-## Install (macOS)
-
-You need Python 3.11 or later (`brew install python`).
+## Install for development
 
 ```bash
 git clone https://github.com/ashweta1/djsync.git
 cd djsync
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
-djsync init
-```
-
-### Research agent: use your Claude plan (recommended)
-
-The research agent runs on **Claude Code**, which comes with Claude Pro and Max.
-So it uses your plan's allowance, with no API key and no per-track charge.
-
-1. Install Claude Code from <https://claude.com/claude-code>.
-2. Run `claude` once in Terminal and sign in with your Claude account, then quit it.
-
-That's it. djsync runs `claude -p` for each track in the background, with only
-the web search tool switched on. Each track takes 20–40 seconds, and djsync
-researches two at a time.
-
-The searches count towards the same usage limit as your claude.ai chats and
-Claude Code, which resets every few hours. If you approve a big batch and hit
-the limit, the tracks it couldn't do say so. Click **Research again** later.
-
-**Alternative: Claude API key (pay per use).** Set `backend = "api"` under
-`[agent]` and export `ANTHROPIC_API_KEY` (create one at
-<https://console.anthropic.com/>). That's faster and runs more tracks in
-parallel, but each track is billed: a few cents with the default
-`claude-opus-5-5` model, mostly for the web searches and for reading their
-results.
-
-Without either, djsync still works; it just shows the plain search links.
-
-### Spotify app (one time)
-
-1. Go to <https://developer.spotify.com/dashboard> and click **Create app**.
-2. Add the redirect URI `http://127.0.0.1:8888/callback` exactly. Spotify no
-   longer accepts `localhost`.
-3. Tick **Web API**, save, and copy the **Client ID**.
-4. Paste the Client ID into `~/.djsync/config.toml` as `client_id = "..."`.
-
-djsync uses PKCE login, so it doesn't need a client secret. The first scan
-opens your browser so you can log in to Spotify. After that, the login is
-cached in `~/.djsync/spotify_token.json`.
-
-### rekordbox access
-
-djsync uses [pyrekordbox](https://github.com/dylanljones/pyrekordbox) to read
-rekordbox 6/7's encrypted `master.db`. If it reports that it can't unlock the
-database (common on rekordbox 7), run this once:
-
-```bash
-python -m pyrekordbox download-key
+pip install -e '.[dev]'
+djsync
 ```
 
 ## Usage
 
 ```bash
-djsync review --scan     # scan Spotify, then open the review page
+djsync                   # open the board (same as the Desktop launcher)
+djsync review --scan     # scan Spotify, then open the board
 ```
 
 All the steps can be done from the review page. Or use the command line:

@@ -13,7 +13,8 @@ from urllib.parse import parse_qs, urlparse
 
 from flask import Flask, flash, redirect, render_template, request, url_for
 
-from . import core, files, research, stores
+from . import config as configmod
+from . import core, files, research, setup, stores
 from .config import Config
 from .state import APPROVED, IMPORTED, IN_REKORDBOX, PENDING, SKIPPED, State
 
@@ -64,6 +65,7 @@ def create_app(cfg: Config) -> Flask:
             "can_reveal": sys.platform == "darwin",
             "researching": researching,
             "agent_enabled": cfg.agent_enabled,
+            "needs_setup": setup.needs_setup(cfg),
         }
 
     @app.template_filter("hue")
@@ -118,6 +120,121 @@ def create_app(cfg: Config) -> Flask:
         """/Users/me/Downloads/x.mp3 -> ~/Downloads/x.mp3"""
         p, home = str(path), str(Path.home())
         return "~" + p[len(home):] if p == home or p.startswith(home + "/") else p
+
+    # ------------------------------------------------------------------ setup
+    @app.get("/setup")
+    def setup_page():
+        return render_template("setup.html", checks=setup.all_checks(cfg), cfg=cfg,
+                               redirect_uri=cfg.redirect_uri)
+
+    @app.post("/setup/spotify-id")
+    def setup_spotify_id():
+        cid = request.form.get("client_id", "").strip()
+        if not cid or not cid.isalnum():
+            flash("That doesn't look like a Spotify Client ID: it's a long string of letters and numbers.", "err")
+        else:
+            if cid != cfg.client_id and cfg.spotify_cache.exists():
+                cfg.spotify_cache.unlink()  # a new app needs a new login
+            cfg.client_id = cid
+            configmod.save(cfg)
+        return redirect(url_for("setup_page") + "#spotify_login")
+
+    @app.post("/setup/connect-spotify")
+    def setup_connect_spotify():
+        """Log in to Spotify: opens the Spotify login page and waits for you to approve."""
+        from . import spotify
+
+        if not cfg.client_id:
+            flash("Add your Spotify Client ID first.", "err")
+            return redirect(url_for("setup_page"))
+        try:
+            spotify.client(cfg).current_user()
+        except BaseException as e:  # spotipy raises SystemExit-like errors on bad IDs
+            flash(f"Spotify login didn't work: {e}. Check the Client ID and that the app's "
+                  f"Redirect URI is exactly {cfg.redirect_uri}.", "err")
+        return redirect(url_for("setup_page"))
+
+    @app.post("/setup/rekordbox-key")
+    def setup_rekordbox_key():
+        """rekordbox 7 encrypts its library; pyrekordbox can download the key it needs."""
+        try:
+            out = subprocess.run([sys.executable, "-m", "pyrekordbox", "download-key"],
+                                 capture_output=True, text=True, timeout=120)
+            if out.returncode != 0:
+                flash("Couldn't get the rekordbox key: "
+                      + ((out.stderr or out.stdout).strip().splitlines() or ["unknown error"])[-1], "err")
+        except Exception as e:
+            flash(f"Couldn't get the rekordbox key: {e}", "err")
+        return redirect(url_for("setup_page") + "#rekordbox")
+
+    # --------------------------------------------------------------- settings
+    @app.get("/settings")
+    def settings_page():
+        return render_template("settings.html", cfg=cfg, all_stores=stores.STORES,
+                               saved=bool(request.args.get("saved")),
+                               config_path=cfg.home / "config.toml")
+
+    @app.post("/settings")
+    def settings_save():
+        f = request.form
+        errors = []
+
+        def path(name, default):
+            v = f.get(name, "").strip()
+            return Path(v).expanduser() if v else default
+
+        def number(name, lo, hi, default):
+            try:
+                n = int(f.get(name, default))
+            except ValueError:
+                errors.append(f"{name.replace('_', ' ')} must be a number")
+                return default
+            if not lo <= n <= hi:
+                errors.append(f"{name.replace('_', ' ')} must be between {lo} and {hi}")
+                return default
+            return n
+
+        cid = f.get("client_id", "").strip()
+        if cid and not cid.isalnum():
+            errors.append("the Spotify Client ID should be letters and numbers only")
+        prefix = f.get("playlist_prefix", "").strip()
+        if not prefix:
+            errors.append("the playlist prefix can't be empty")
+        mode = f.get("rekordbox_mode", "auto")
+        backend = f.get("agent_backend", "auto")
+        model = f.get("claude_code_model", "sonnet")
+        chosen_stores = [s for s in f.getlist("stores") if s in stores.STORES]
+        if not chosen_stores:
+            errors.append("choose at least one store")
+        new = dict(
+            watch_dir=path("watch_dir", cfg.watch_dir),
+            library_dir=path("library_dir", cfg.library_dir),
+            extra_dirs=[Path(x.strip()).expanduser() for x in f.get("extra_dirs", "").splitlines() if x.strip()],
+            move_files=bool(f.get("move_files")),
+            recent_days=number("recent_days", 1, 3650, cfg.recent_days),
+            rekordbox_mode=mode if mode in ("auto", "db", "xml") else "auto",
+            rekordbox_db_path=f.get("rekordbox_db_path", "").strip(),
+            playlist_prefix=prefix or cfg.playlist_prefix,
+            threshold=number("threshold", 50, 100, cfg.threshold),
+            file_threshold=number("file_threshold", 40, 100, cfg.file_threshold),
+            stores=chosen_stores or cfg.stores,
+            agent_enabled=bool(f.get("agent_enabled")),
+            agent_auto=bool(f.get("agent_auto")),
+            agent_backend=backend if backend in ("auto", "claude-code", "api") else "auto",
+            claude_code_model=model if model in ("sonnet", "haiku", "opus", "") else "sonnet",
+            claude_path=f.get("claude_path", "").strip(),
+            beatport_direct=bool(f.get("beatport_direct")),
+        )
+        if errors:
+            flash("Not saved: " + "; ".join(errors) + ".", "err")
+            return redirect(url_for("settings_page"))
+        if cid != cfg.client_id and cfg.spotify_cache.exists():
+            cfg.spotify_cache.unlink()  # different Spotify app: log in again
+        cfg.client_id = cid
+        for k, v in new.items():
+            setattr(cfg, k, v)  # takes effect right away, no restart needed
+        configmod.save(cfg)
+        return redirect(url_for("settings_page", saved=1))
 
     @app.get("/")
     def index():
@@ -405,8 +522,17 @@ def create_app(cfg: Config) -> Flask:
 
 def serve(cfg: Config, open_browser: bool = True) -> None:
     app = create_app(cfg)
-    url = f"http://127.0.0.1:{cfg.port}/"
+    url = f"http://127.0.0.1:{cfg.port}/" + ("setup" if setup.needs_setup(cfg) else "")
     if open_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    print(f"djsync review page: {url}  (Ctrl+C to stop)")
-    app.run(host="127.0.0.1", port=cfg.port, debug=False)
+    print(f"djsync is running at {url}\nLeave this window open while you use it. "
+          "Press Ctrl+C (or close the window) to stop.")
+    try:
+        app.run(host="127.0.0.1", port=cfg.port, debug=False)
+    except OSError as e:
+        if "in use" not in str(e).lower():
+            raise
+        # djsync is probably already running: just open it.
+        print(f"djsync seems to be running already. Opening {url}")
+        if open_browser:
+            webbrowser.open(url)

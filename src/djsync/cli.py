@@ -1,4 +1,4 @@
-"""Command line: djsync init | scan | review | import."""
+"""djsync: run `djsync` to open the board. Other commands: scan, research, import, beatport-test."""
 
 from __future__ import annotations
 
@@ -128,7 +128,7 @@ def cmd_import(cfg, args) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="djsync", description=__doc__)
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(dest="cmd")  # no command = open the board
     sub.add_parser("init", help="create ~/.djsync/config.toml")
     sub.add_parser("scan", help="find liked songs missing from rekordbox")
     r = sub.add_parser("review", help="open the review page in your browser")
@@ -145,6 +145,10 @@ def main(argv: list[str] | None = None) -> int:
     i.add_argument("--watch", action="store_true", help="keep checking until all approved are imported")
     i.add_argument("--interval", type=int, default=30, help="seconds between checks with --watch")
     args = p.parse_args(argv)
+    if args.cmd is None:  # plain `djsync` (or the desktop launcher): open the board
+        args = p.parse_args(["review"] + list(argv or []))
+    if args.cmd == "review" and not config.CONFIG_PATH.exists():
+        config.write_default(config.CONFIG_PATH)  # first run: create settings with defaults
 
     cfg = config.load()
     handler = {"init": cmd_init, "scan": cmd_scan, "review": cmd_review, "import": cmd_import,

@@ -1368,3 +1368,99 @@ def test_bought_flag_cleared_when_skipped(cfg):
     client.post("/bought/1")
     client.post("/move/1/skipped")
     assert not State.load(cfg.state_path).tracks["1"].bought
+
+
+# --- stage 1: setup checklist, settings page, first run -------------------------------------
+
+from djsync import config as configmod
+from djsync import setup as setupmod
+
+
+def test_config_save_roundtrip(tmp_path):
+    c = Config(home=tmp_path, client_id='abc123', extra_dirs=[Path.home() / "Music", Path("/Volumes/USB")],
+               stores=["beatport", "deezer"], agent_auto=False, recent_days=30, claude_code_model="haiku")
+    p = configmod.save(c)
+    text = p.read_text()
+    assert 'extra_dirs = ["~/Music", "/Volumes/USB"]' in text and "# djsync configuration" in text
+    c2 = configmod.load(p)
+    for f in ("client_id", "extra_dirs", "stores", "agent_auto", "recent_days", "claude_code_model"):
+        assert getattr(c, f) == getattr(c2, f), f
+
+
+def test_setup_checks(cfg):
+    checks = {c.key: c for c in setupmod.all_checks(cfg, read=lambda c: [1, 2, 3])}
+    assert not checks["spotify_app"].ok and not checks["spotify_login"].ok
+    assert checks["rekordbox"].ok and "3 tracks" in checks["rekordbox"].detail
+    assert checks["folders"].ok
+    assert setupmod.needs_setup(cfg)
+
+    def broken(c):
+        raise RuntimeError("file is not a database")
+    rb = setupmod.rekordbox_library(cfg, read=broken)
+    assert not rb.ok and "key download" in rb.detail
+
+    agent = setupmod.research_agent(cfg, which=lambda name: None)
+    assert not agent.ok and agent.optional and "Install Claude Code" in agent.detail
+
+
+def test_setup_page_and_saving_client_id(cfg, monkeypatch):
+    from djsync.web import create_app
+    monkeypatch.setattr(core.rekordbox, "read_library", lambda c: [1] * 1234)
+    client = create_app(cfg).test_client()
+    html = client.get("/setup").get_data(as_text=True)
+    assert "Set up djsync" in html and "developer.spotify.com/dashboard" in html
+    assert cfg.redirect_uri in html and "1,234 tracks" in html
+    assert "Finish setting up djsync" in client.get("/").get_data(as_text=True)
+
+    client.post("/setup/spotify-id", data={"client_id": "not valid!"})
+    assert cfg.client_id == ""
+    client.post("/setup/spotify-id", data={"client_id": "1a2b3c4d5e"})
+    assert cfg.client_id == "1a2b3c4d5e"
+    assert configmod.load(cfg.home / "config.toml").client_id == "1a2b3c4d5e"
+
+    cfg.spotify_cache.parent.mkdir(parents=True, exist_ok=True)
+    cfg.spotify_cache.write_text("{}")                     # logged in
+    assert "Finish setting up djsync" not in client.get("/").get_data(as_text=True)
+
+
+def test_settings_page_saves_and_applies(cfg):
+    from djsync.web import create_app
+    client = create_app(cfg).test_client()
+    html = client.get("/settings").get_data(as_text=True)
+    assert "Downloads folder" in html and 'name="claude_code_model"' in html
+    form = {
+        "client_id": "abc123", "watch_dir": "~/Downloads/Bought", "extra_dirs": "~/Music\n/Volumes/USB\n",
+        "recent_days": "30", "library_dir": "~/Music/DJ", "move_files": "on",
+        "playlist_prefix": "new-", "rekordbox_mode": "xml", "rekordbox_db_path": "",
+        "agent_enabled": "on", "agent_backend": "claude-code", "claude_code_model": "haiku",
+        "beatport_direct": "on", "stores": ["beatport", "deezer"], "threshold": "90", "file_threshold": "70",
+    }
+    r = client.post("/settings", data=form)
+    assert r.headers["Location"].endswith("/settings?saved=1")
+    assert cfg.watch_dir == Path("~/Downloads/Bought").expanduser()      # applied right away
+    assert cfg.extra_dirs == [Path.home() / "Music", Path("/Volumes/USB")]
+    assert (cfg.playlist_prefix, cfg.rekordbox_mode, cfg.claude_code_model) == ("new-", "xml", "haiku")
+    assert cfg.agent_auto is False and cfg.stores == ["beatport", "deezer"]
+    saved = configmod.load(cfg.home / "config.toml")
+    assert saved.watch_dir == cfg.watch_dir and saved.threshold == 90
+    assert "✓ Saved" in client.get(r.headers["Location"]).get_data(as_text=True)
+
+
+def test_settings_rejects_bad_values(cfg):
+    from djsync.web import create_app
+    client = create_app(cfg).test_client()
+    html = client.post("/settings", data={"playlist_prefix": "", "recent_days": "abc", "stores": []},
+                       follow_redirects=True).get_data(as_text=True)
+    assert "Not saved" in html and "playlist prefix" in html and "recent days" in html
+    assert cfg.playlist_prefix == "djsync-downloads-"
+    assert not (cfg.home / "config.toml").exists()
+
+
+def test_plain_djsync_opens_the_board(monkeypatch, tmp_path):
+    from djsync import cli, web
+    monkeypatch.setattr(configmod, "CONFIG_PATH", tmp_path / "config.toml")
+    monkeypatch.setattr(configmod, "load", lambda: Config(home=tmp_path))
+    opened = []
+    monkeypatch.setattr(web, "serve", lambda c, open_browser=True: opened.append(open_browser))
+    assert cli.main([]) == 0
+    assert opened == [True] and (tmp_path / "config.toml").exists()    # first run made settings

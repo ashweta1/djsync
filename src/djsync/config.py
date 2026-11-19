@@ -10,74 +10,6 @@ from pathlib import Path
 HOME = Path(os.environ.get("DJSYNC_HOME", Path.home() / ".djsync"))
 CONFIG_PATH = HOME / "config.toml"
 
-DEFAULT_CONFIG = """\
-# djsync configuration
-
-[spotify]
-# Create an app at https://developer.spotify.com/dashboard
-# and add this exact Redirect URI to it.
-client_id = ""
-redirect_uri = "http://127.0.0.1:8888/callback"
-
-[paths]
-# Folder your store purchases download into. djsync scans it for approved tracks.
-watch_dir = "~/Downloads"
-# Other folders to look in for purchased tracks (e.g. iTunes/Apple Music purchases
-# land in ~/Music). Only files from the last `recent_days` days are considered, and
-# they're copied into your DJ folder on import, never moved.
-extra_dirs = ["~/Music"]
-recent_days = 90
-# Where imported tracks are moved to (your DJ music folder).
-library_dir = "~/Music/DJ"
-# true = move files out of watch_dir, false = copy them.
-move_files = true
-
-[rekordbox]
-# "auto": write directly to rekordbox's database (rekordbox must be closed),
-#         falling back to an XML file if that fails.
-# "db":   database only.   "xml": XML file only.
-mode = "auto"
-# Optional: path to master.db if pyrekordbox can't find it automatically.
-db_path = ""
-playlist_prefix = "djsync-downloads-"
-
-[match]
-# 0-100. Higher = stricter matching between Spotify and your library.
-threshold = 88
-# 0-100. How closely a downloaded file must match an approved track. Files are
-# matched on tags AND filename, so this can be looser. Lower it if files aren't
-# found; raise it if the wrong file gets picked.
-file_threshold = 75
-
-[stores]
-# Stores to show buy links for, in order.
-enabled = ["beatport", "bandcamp", "deezer"]
-
-[agent]
-# The research agent searches Beatport for each approved track, picks the best
-# match and gives you a direct link (another store, or Deezer, if Beatport
-# doesn't have it).
-#   backend = "claude-code": uses Claude Code on this Mac, i.e. your Claude Pro/Max
-#                            plan. Install Claude Code and sign in once with `claude`.
-#   backend = "api":         uses the Claude API with ANTHROPIC_API_KEY (pay per use).
-#   backend = "auto":        Claude Code if installed, else the API.
-backend = "auto"
-# Claude Code only: model to use - "sonnet" (default), "haiku" (lighter on your
-# plan's allowance), "opus" (most thorough), or "" for Claude Code's own default.
-claude_code_model = "sonnet"
-# Search Beatport's own catalogue first (finds new releases web search misses).
-beatport_search = true
-enabled = true
-# Research tracks automatically as soon as you approve them.
-auto = true
-# API only:
-model = "claude-opus-5-5"
-# API only: low | medium | high - higher is more thorough and costs more
-effort = "medium"
-
-[web]
-port = 5055
-"""
 
 
 @dataclass
@@ -134,8 +66,7 @@ def write_default(path: Path = CONFIG_PATH) -> bool:
     """Write a starter config. Returns False if one already exists."""
     if path.exists():
         return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(DEFAULT_CONFIG)
+    save(Config(home=path.parent), path)
     return True
 
 
@@ -175,3 +106,99 @@ def load(path: Path = CONFIG_PATH) -> Config:
     cfg.claude_code_model = ag.get("claude_code_model", "sonnet")
     cfg.claude_path = ag.get("claude_path", "")
     return cfg
+
+
+def _q(value) -> str:
+    """A TOML value. JSON strings and lists are valid TOML for what we store."""
+    import json
+
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, Path):
+        value = _short(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(_q(v) for v in value) + "]"
+    return json.dumps(str(value), ensure_ascii=False)
+
+
+def _short(p: Path) -> str:
+    """/Users/me/Music -> ~/Music, so the file reads nicely and survives a username change."""
+    home = str(Path.home())
+    s = str(p)
+    return "~" + s[len(home):] if s == home or s.startswith(home + "/") else s
+
+
+def dump(cfg: Config) -> str:
+    """The config as a commented config.toml."""
+    return f"""\
+# djsync configuration. You can also change all of this on the Settings page.
+
+[spotify]
+# Create an app at https://developer.spotify.com/dashboard
+# and add this exact Redirect URI to it.
+client_id = {_q(cfg.client_id)}
+redirect_uri = {_q(cfg.redirect_uri)}
+
+[paths]
+# Folder your store purchases download into. Files here are moved on import.
+watch_dir = {_q(cfg.watch_dir)}
+# Other folders to look in (e.g. Apple Music purchases land in ~/Music). Only files
+# from the last `recent_days` days count, and they're copied on import, never moved.
+extra_dirs = {_q(cfg.extra_dirs)}
+recent_days = {_q(cfg.recent_days)}
+# Where imported tracks go (your DJ music folder).
+library_dir = {_q(cfg.library_dir)}
+# true = move files out of the downloads folder, false = copy them.
+move_files = {_q(cfg.move_files)}
+
+[rekordbox]
+# "auto": write straight into rekordbox (it must be closed), or an XML file if that fails.
+# "db": rekordbox only.   "xml": XML file only.
+mode = {_q(cfg.rekordbox_mode)}
+# Path to master.db, only if djsync can't find it by itself.
+db_path = {_q(cfg.rekordbox_db_path)}
+playlist_prefix = {_q(cfg.playlist_prefix)}
+
+[match]
+# 0-100. Higher = stricter matching between Spotify and your library.
+threshold = {_q(cfg.threshold)}
+# 0-100. How closely a downloaded file must match an approved track.
+file_threshold = {_q(cfg.file_threshold)}
+
+[stores]
+# Stores to show links for, in order.
+enabled = {_q(cfg.stores)}
+
+[agent]
+# The research agent finds the best place to buy each approved track.
+#   "claude-code": Claude Code on this computer (your Claude Pro/Max plan)
+#   "api":         the Claude API with ANTHROPIC_API_KEY (pay per use)
+#   "auto":        Claude Code if it's installed, otherwise the API
+backend = {_q(cfg.agent_backend)}
+# Claude Code only: "sonnet", "haiku", "opus", or "" for Claude Code's default.
+claude_code_model = {_q(cfg.claude_code_model)}
+# Claude Code only: full path to the `claude` command, if djsync can't find it.
+claude_path = {_q(cfg.claude_path)}
+# Search Beatport's own catalogue first.
+beatport_search = {_q(cfg.beatport_direct)}
+enabled = {_q(cfg.agent_enabled)}
+# Research tracks as soon as you approve them.
+auto = {_q(cfg.agent_auto)}
+# API only:
+model = {_q(cfg.agent_model)}
+effort = {_q(cfg.agent_effort)}
+
+[web]
+port = {_q(cfg.port)}
+"""
+
+
+def save(cfg: Config, path: Path | None = None) -> Path:
+    path = path or (cfg.home / "config.toml")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(dump(cfg))
+    tmp.replace(path)
+    return path

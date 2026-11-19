@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Set up · djsync{% endblock %}
+
+{% block header_actions %}
+<div class="top-actions">
+  <a class="toplink" href="{{ url_for('settings_page') }}">Settings</a>
+  <a class="toplink" href="{{ url_for('index') }}">Board →</a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% set by = {} %}{% for c in checks %}{% set _ = by.update({c.key: c}) %}{% endfor %}
+{% set required = checks|rejectattr("optional")|list %}
+{% set done = required|selectattr("ok")|list|length %}
+<section class="head">
+  <div>
+    <h1>Set up djsync</h1>
+    <p class="muted">{{ done }} of {{ required|length }} required steps done.
+      {% if done == required|length %}You're ready: <a href="{{ url_for('index') }}">open the board</a> and click <b>Scan Spotify</b>.{% else %}This takes about five minutes, once.{% endif %}</p>
+  </div>
+</section>
+
+<ol class="steps">
+  {# ---- 1. Spotify app ---- #}
+  {% set c = by.spotify_app %}
+  <li class="step-card {% if c.ok %}done{% endif %}" id="spotify_app">
+    <div class="step-head"><span class="step-mark" aria-hidden="true">{% if c.ok %}✓{% else %}1{% endif %}</span>
+      <div><h2>{{ c.title }}</h2><p class="muted small">{{ c.detail }}</p></div></div>
+    {% if not c.ok %}
+    <div class="step-body">
+      <p>djsync reads your Spotify likes through a small, free "app" you create on Spotify's developer site. It only needs to be done once.</p>
+      <ol class="howto-list">
+        <li>Open <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard ↗</a> and log in with your Spotify account.</li>
+        <li>Click <b>Create app</b>. Name and description can be anything, for example "djsync".</li>
+        <li>Under <b>Redirect URIs</b>, add exactly:
+          <span class="copy"><code id="redir">{{ redirect_uri }}</code>
+          <button type="button" class="btn sm ghost" onclick="copyText('redir', this)">Copy</button></span></li>
+        <li>Tick <b>Web API</b>, agree to the terms and click <b>Save</b>.</li>
+        <li>Open the app's <b>Settings</b>, copy the <b>Client ID</b>, and paste it here:</li>
+      </ol>
+      <form method="post" action="{{ url_for('setup_spotify_id') }}" class="picker">
+        <input class="search" name="client_id" placeholder="Client ID, e.g. 1a2b3c4d…" aria-label="Spotify Client ID" autocomplete="off" required>
+        <button class="btn primary" type="submit">Save</button>
+      </form>
+    </div>
+    {% endif %}
+  </li>
+
+  {# ---- 2. Spotify login ---- #}
+  {% set c = by.spotify_login %}
+  <li class="step-card {% if c.ok %}done{% endif %}" id="spotify_login">
+    <div class="step-head"><span class="step-mark" aria-hidden="true">{% if c.ok %}✓{% else %}2{% endif %}</span>
+      <div><h2>{{ c.title }}</h2><p class="muted small">{{ c.detail }}</p></div></div>
+    {% if not c.ok %}
+    <div class="step-body">
+      <p>A Spotify page opens. Approve it and come back here. djsync can only <i>read</i> your likes and playlists; it can't change anything.</p>
+      <form method="post" action="{{ url_for('setup_connect_spotify') }}">
+        <button class="btn primary" type="submit" {% if not by.spotify_app.ok %}disabled title="Add the Client ID first"{% endif %}>Connect Spotify</button>
+      </form>
+    </div>
+    {% endif %}
+  </li>
+
+  {# ---- 3. rekordbox ---- #}
+  {% set c = by.rekordbox %}
+  <li class="step-card {% if c.ok %}done{% endif %}" id="rekordbox">
+    <div class="step-head"><span class="step-mark" aria-hidden="true">{% if c.ok %}✓{% else %}3{% endif %}</span>
+      <div><h2>{{ c.title }}</h2><p class="muted small">{{ c.detail }}</p></div></div>
+    {% if not c.ok %}
+    <div class="step-body">
+      <p>djsync reads your rekordbox collection to skip tracks you already have. Make sure rekordbox 6 or 7 is installed and has been opened at least once.</p>
+      <div class="row-btns">
+        <form method="post" action="{{ url_for('setup_rekordbox_key') }}"><button class="btn" type="submit">Fix: get the rekordbox 7 key</button></form>
+        <a class="btn ghost" href="{{ url_for('setup_page') }}#rekordbox">Check again</a>
+      </div>
+      <p class="muted small">If your library is somewhere unusual, set its <code>master.db</code> path in <a href="{{ url_for('settings_page') }}#rekordbox">Settings</a>.</p>
+    </div>
+    {% endif %}
+  </li>
+
+  {# ---- 4. Folders ---- #}
+  {% set c = by.folders %}
+  <li class="step-card {% if c.ok %}done{% endif %}" id="folders">
+    <div class="step-head"><span class="step-mark" aria-hidden="true">{% if c.ok %}✓{% else %}4{% endif %}</span>
+      <div><h2>{{ c.title }}</h2><p class="muted small">{{ c.detail }}</p></div></div>
+    <div class="step-body {% if c.ok %}quiet{% endif %}">
+      <p class="muted small">Change these in <a href="{{ url_for('settings_page') }}#folders">Settings</a>.</p>
+    </div>
+  </li>
+
+  {# ---- 5. Research agent (optional) ---- #}
+  {% set c = by.agent %}
+  <li class="step-card optional {% if c.ok %}done{% endif %}" id="agent">
+    <div class="step-head"><span class="step-mark" aria-hidden="true">{% if c.ok %}✓{% else %}5{% endif %}</span>
+      <div><h2>{{ c.title }} <span class="muted small">optional</span></h2><p class="muted small">{{ c.detail }}</p></div></div>
+    {% if not c.ok %}
+    <div class="step-body">
+      <p>With a Claude Pro or Max plan, djsync can find the best place to buy each track for you. Install Claude Code by pasting this into Terminal:</p>
+      <span class="copy"><code id="cc">curl -fsSL https://claude.ai/install.sh | bash</code>
+        <button type="button" class="btn sm ghost" onclick="copyText('cc', this)">Copy</button></span>
+      <p>Then run <code>claude</code> once, type <code>/login</code> and sign in with your Claude account. <a class="btn ghost sm" href="{{ url_for('setup_page') }}#agent">Check again</a></p>
+    </div>
+    {% endif %}
+  </li>
+</ol>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function copyText(id, btn) {
+    const text = document.getElementById(id).textContent.trim();
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(
+      () => { btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy', 1500); },
+      () => { const r = document.createRange(); r.selectNode(document.getElementById(id));
+              getSelection().removeAllRanges(); getSelection().addRange(r); });
+  }
+</script>
+{% endblock %}
