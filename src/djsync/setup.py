@@ -65,7 +65,7 @@ def folders(cfg: Config) -> Check:
                  f"imports go to {cfg.library_dir}.{note}")
 
 
-def research_agent(cfg: Config, which=shutil.which, run=subprocess.run) -> Check:
+def research_agent(cfg: Config, which=None, run=subprocess.run) -> Check:
     from . import research
 
     if not cfg.agent_enabled:
@@ -75,7 +75,7 @@ def research_agent(cfg: Config, which=shutil.which, run=subprocess.run) -> Check
         return Check("agent", "Research agent", ok,
                      "Using the Claude API key." if ok else
                      "Set to use the Claude API, but ANTHROPIC_API_KEY isn't set.", optional=True)
-    exe = which(cfg.claude_path or "claude")
+    exe = research.find_claude(cfg, which=which)
     if not exe:
         return Check("agent", "Research agent", False,
                      "Install Claude Code (comes with Claude Pro/Max) to find the best place to buy "

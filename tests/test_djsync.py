@@ -1,3 +1,4 @@
+import urllib.error
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -823,6 +824,7 @@ def test_backend_auto(monkeypatch):
     monkeypatch.setattr(research.shutil, "which", lambda name: "/usr/local/bin/claude")
     assert research.backend(Config()) == "claude-code"
     monkeypatch.setattr(research.shutil, "which", lambda name: None)
+    monkeypatch.setattr(research, "CLAUDE_PLACES", ())
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
     assert research.backend(Config()) == "api"
     assert research.backend(Config(agent_backend="claude-code")) == "claude-code"
@@ -1464,3 +1466,37 @@ def test_plain_djsync_opens_the_board(monkeypatch, tmp_path):
     monkeypatch.setattr(web, "serve", lambda c, open_browser=True: opened.append(open_browser))
     assert cli.main([]) == 0
     assert opened == [True] and (tmp_path / "config.toml").exists()    # first run made settings
+
+
+
+# --- started from the Desktop: no Terminal PATH, python.org certificates ---------------------
+
+def test_find_claude_outside_path(tmp_path, monkeypatch):
+    exe = tmp_path / ".local" / "bin" / "claude"
+    exe.parent.mkdir(parents=True)
+    exe.write_text("#!/bin/sh\n")
+    exe.chmod(0o755)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(research, "CLAUDE_PLACES", ("~/.local/bin/claude",))
+    assert research.find_claude(Config(), which=lambda n: None) == str(exe)
+    assert research.backend(Config()) == "claude-code" or research.shutil.which("claude")
+    # an explicit path in Settings wins
+    other = tmp_path / "elsewhere" / "claude"
+    other.parent.mkdir()
+    other.write_text("#!/bin/sh\n")
+    other.chmod(0o755)
+    assert research.find_claude(Config(claude_path=str(other)), which=lambda n: None) == str(other)
+
+
+def test_requests_use_certifi_bundle():
+    from djsync import net
+    import certifi
+    assert net._CONTEXT.verify_mode.name == "CERT_REQUIRED"
+    assert certifi.where()
+
+
+def test_certificate_error_is_explained():
+    def opener(req, timeout=15):
+        raise urllib.error.URLError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed")
+    r = beatport.search("Bicep", "Glue", opener)
+    assert "certificates" in r.error and r.candidates == []

@@ -152,7 +152,10 @@ def query_for(artist: str, title: str) -> str:
     return search_query(artist, title)
 
 
-def search(artist: str, title: str, opener=urllib.request.urlopen, limit: int = 15) -> Result:
+def search(artist: str, title: str, opener=None, limit: int = 15) -> Result:
+    from .net import urlopen
+
+    opener = opener or urlopen
     url = SEARCH_URL.format(q=urllib.parse.quote_plus(query_for(artist, title)))
     res = Result()
     try:
@@ -165,6 +168,9 @@ def search(artist: str, title: str, opener=urllib.request.urlopen, limit: int = 
         return res
     except Exception as e:
         res.error = f"Couldn't reach Beatport: {e}"
+        if "CERTIFICATE_VERIFY_FAILED" in str(e):
+            res.error += (" (this Python can't check website certificates; reinstall djsync "
+                          "with the install line to fix it)")
         return res
     res.candidates, res.found_json = parse(html)
     res.candidates = res.candidates[:limit]

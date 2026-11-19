@@ -246,10 +246,38 @@ def ask_claude(cfg: Config, t: Track, client=None, cands=None) -> tuple[dict | N
 _URL = re.compile(r"https?://[^\s\"'<>)\]]+")
 
 
+# Where Claude Code's installers put the `claude` command. Started from the Desktop
+# launcher, djsync doesn't get your Terminal's PATH, so look in these too.
+CLAUDE_PLACES = (
+    "~/.local/bin/claude",
+    "~/.claude/local/claude",
+    "/opt/homebrew/bin/claude",
+    "/usr/local/bin/claude",
+    "~/.npm-global/bin/claude",
+    "~/.bun/bin/claude",
+)
+
+
+def find_claude(cfg: Config, which=None) -> str | None:
+    """Full path to Claude Code's `claude` command, or None if it isn't installed."""
+    which = which or shutil.which
+    if cfg.claude_path:
+        p = os.path.expanduser(cfg.claude_path)
+        return p if os.path.isfile(p) and os.access(p, os.X_OK) else which(cfg.claude_path)
+    found = which("claude")
+    if found:
+        return found
+    for place in CLAUDE_PLACES:
+        p = os.path.expanduser(place)
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return None
+
+
 def backend(cfg: Config) -> str:
     if cfg.agent_backend in ("api", "claude-code"):
         return cfg.agent_backend
-    if shutil.which(cfg.claude_path or "claude"):
+    if find_claude(cfg):
         return "claude-code"
     return "api" if os.environ.get("ANTHROPIC_API_KEY") else "claude-code"
 
@@ -268,7 +296,7 @@ def _tool_text(content) -> str:
 
 def ask_claude_code(cfg: Config, t: Track, run=subprocess.run, cands=None) -> tuple[dict | None, set[str]]:
     """Same search, run through Claude Code (`claude -p`) on your Claude plan."""
-    exe = shutil.which(cfg.claude_path or "claude") or cfg.claude_path or "claude"
+    exe = find_claude(cfg) or cfg.claude_path or "claude"
     cmd = [
         exe, "-p", _describe(t, cands) + ("\n\nGive your answer." if cands else
                                            "\n\nUse the web search tool, then give your answer."),
@@ -353,8 +381,11 @@ def _by_name(t: Track, cands) -> list:
     return [c for c in cands if c.artists and similar(want, TrackKey.of(c.artists, c.title))]
 
 
-def deezer_link(t: Track, opener=urllib.request.urlopen) -> str:
+def deezer_link(t: Track, opener=None) -> str:
     """Find the track on Deezer via its public API (no account needed)."""
+    from .net import urlopen
+
+    opener = opener or urlopen
     def get(url: str) -> dict:
         with opener(url, timeout=15) as r:
             return json.loads(r.read().decode())
@@ -401,7 +432,10 @@ def _enrich(f: Finding, t: Track, cands) -> None:
               for c in others[:4]]
 
 
-def research(cfg: Config, t: Track, client=None, opener=urllib.request.urlopen) -> Finding:
+def research(cfg: Config, t: Track, client=None, opener=None) -> Finding:
+    from .net import urlopen
+
+    opener = opener or urlopen
     f = Finding()
 
     # 1. Beatport's own search (its live catalogue).
