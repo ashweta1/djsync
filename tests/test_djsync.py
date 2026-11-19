@@ -1561,7 +1561,10 @@ def test_add_tracks_on_the_board(cfg, monkeypatch):
     monkeypatch.setattr(core.rekordbox, "read_library", lambda c: [LibraryTrack("Bicep", "Glue", "/x")])
     client = create_app(cfg).test_client()
     html = client.get("/").get_data(as_text=True)
-    assert "＋ Add tracks" in html and 'name="tracks"' in html
+    scan = html.split('id="c-scan"')[1].split('id="c-buy"')[0]
+    buy = html.split('id="c-buy"')[1].split('id="c-import"')[0]
+    assert "＋ Add" in scan and 'name="tracks"' in scan                # in the Scan column
+    assert 'name="tracks"' not in buy and "add-toggle" not in buy
     r = client.post("/add", data={"tracks": "Fear of Water by SYML\nGlue by Bicep"})
     st = State.load(cfg.state_path)
     [new] = [t for t in st.tracks.values() if t.title == "Fear of Water"]

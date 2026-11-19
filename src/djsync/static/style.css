@@ -764,3 +764,5 @@ textarea.search:focus, select.search:focus { outline: 2px solid var(--accent); o
 .add-foot small { font-size: 11.5px; }
 .add-toggle[aria-expanded="true"] { background: var(--panel-2); }
 .by-hand { color: var(--muted); font-size: 11.5px; }
+/* "+ Add" sits after the Scan Spotify ▾ pair, as its own button */
+.split .add-toggle { margin-left: 6px; border-radius: 8px !important; border-left: 1px solid var(--line-2) !important; }

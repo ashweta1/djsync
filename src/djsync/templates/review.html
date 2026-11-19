@@ -38,10 +38,23 @@
         </button>
         <button type="button" class="btn sm src-toggle" aria-expanded="false" aria-controls="src-panel"
                 onclick="togglePanel(this)" title="Choose what to scan">▾</button>
+        <button type="button" class="btn sm add-toggle" aria-expanded="false" aria-controls="add-panel"
+                onclick="toggleAdd(this)" title="Add tracks by name, e.g. one that isn't on Spotify">＋ Add</button>
       </div>
       <span class="col-sub"><span class="src-label" title="What Scan Spotify reads">{{ sources_label }}</span> · {% if last_scan %}scanned {{ last_scan|ago }}{% if last_scan_summary %} · {{ last_scan_summary }}{% endif %}{% else %}not scanned yet{% endif %}</span>
     </header>
 
+    <div class="add-panel" id="add-panel" hidden>
+      <form method="post" action="{{ url_for('add_tracks') }}">
+        <textarea class="search" name="tracks" rows="2" required aria-label="Tracks to add"
+                  placeholder="Fear of Water by SYML&#10;Artist - Title"
+                  onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.requestSubmit(); }"></textarea>
+        <div class="add-foot">
+          <small class="muted">One per line, "Title by Artist" or "Artist - Title". Shift+Return for a new line.</small>
+          <button class="btn sm" type="submit">Add to Buy</button>
+        </div>
+      </form>
+    </div>
     <div class="src-panel" id="src-panel" hidden>
       <form method="post" action="{{ url_for('scan') }}" id="scan-form">
         <input type="hidden" name="picker" value="1">
@@ -124,10 +137,8 @@
       <b class="badge" title="Still to buy">{{ to_buy|length - n_bought }}</b>
       <span class="col-sub">Approved tracks to buy{% if n_bought %} · {{ n_bought }} bought, waiting for the download{% endif %}</span>
     </header>
+    {% if to_buy %}
     <div class="col-tools">
-      <button type="button" class="btn sm add-toggle" aria-expanded="false" aria-controls="add-panel"
-              onclick="toggleAdd(this)" title="Add a track that isn't on Spotify, or any track by name">＋ Add tracks</button>
-      {% if to_buy %}
       {% set todo = to_buy|rejectattr("researched_at")|rejectattr("id", "in", researching)|list %}
       {% if agent_enabled and todo %}
       <form method="post" action="{{ url_for('research_route') }}" class="inline">
@@ -137,19 +148,8 @@
       <form method="post" action="{{ url_for('rescan_downloads') }}" class="inline push">
         <button class="btn ghost sm" title="Rescan Downloads for new files">↻ Downloads</button>
       </form>
-      {% endif %}
     </div>
-    <div class="add-panel" id="add-panel" hidden>
-      <form method="post" action="{{ url_for('add_tracks') }}">
-        <textarea class="search" name="tracks" rows="2" required aria-label="Tracks to add"
-                  placeholder="Fear of Water by SYML&#10;Artist - Title"
-                  onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.requestSubmit(); }"></textarea>
-        <div class="add-foot">
-          <small class="muted">One per line, "Title by Artist" or "Artist - Title". Shift+Return for a new line.</small>
-          <button class="btn sm" type="submit">Add to Buy</button>
-        </div>
-      </form>
-    </div>
+    {% endif %}
     <div class="col-body">
       {% for t in to_buy %}
       {% set confident_bp = t.buy_store == "beatport.com" and t.buy_confidence != "low" %}

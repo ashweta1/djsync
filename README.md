@@ -79,8 +79,8 @@ header. On a phone, swipe between the columns.
 
 ### Adding a track by hand
 
-Heard something in a club, or it's not on Spotify? Click **＋ Add tracks** at
-the top of the Buy column and type it, like `Fear of Water by SYML` or
+Heard something in a club, or it's not on Spotify? Click **＋ Add** next to
+**Scan Spotify** and type it, like `Fear of Water by SYML` or
 `SYML - Fear of Water`. You can paste several, one per line. The track goes
 straight to Buy and the research agent starts on it. If Spotify is connected,
 djsync looks the track up there first to get its exact recording ID (ISRC),
